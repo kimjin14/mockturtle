@@ -837,8 +837,11 @@ public:
 
     auto v1 = *begin++;
     auto v2 = *begin++;
-
-    return ( v1 ^ c1.weight ) && ( v2 ^ c2.weight );
+    if (c1.index < c2.index) {
+        return ( v1 ^ c1.weight ) && ( v2 ^ c2.weight );
+    }
+    else 
+        return ( ( v1 ^ c1.weight ) != ( v2 ^ c2.weight ) ); 
   }
 
   template<typename Iterator>
@@ -854,8 +857,11 @@ public:
 
     auto tt1 = *begin++;
     auto tt2 = *begin++;
-
-    return ( c1.weight ? ~tt1 : tt1 ) & ( c2.weight ? ~tt2 : tt2 );
+    if (c1.index < c2.index) {
+        return ( c1.weight ? ~tt1 : tt1 ) & ( c2.weight ? ~tt2 : tt2 );
+    }
+    else 
+        return ( c1.weight ? ~tt1 : tt1 ) ^ ( c2.weight ? ~tt2 : tt2 );
   }
 #pragma endregion
 
