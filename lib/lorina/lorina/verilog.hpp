@@ -432,7 +432,7 @@ public:
       detail::trim( token );
 
       /* switch to comment mode */
-      if ( token == "//" && result == detail::tokenizer_return_code::valid )
+      if ( token.find("//") != std::string::npos && result == detail::tokenizer_return_code::valid )
       {
         tok.set_comment_mode();
       }
