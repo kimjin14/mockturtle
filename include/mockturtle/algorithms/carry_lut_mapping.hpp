@@ -142,47 +142,41 @@ private:
   }
 
   bool get_path(node<Ntk> n, uint32_t depth, uint32_t curr_depth) {
-  
 
     if ( ntk.is_constant( n ) || ntk.is_pi( n ) ) {
       if (curr_depth == depth) {
-        std::cout << n << "(" << curr_depth <<"),";
+        //std::cout << n << "(" << curr_depth <<"),";
         critical_path.push_back(n);
         return true;
       } else return false;
     }
 
     bool longest = false;
-  
-    ntk.foreach_fanin( n, [&] (auto schild) { 
-
-      auto nchild = ntk.get_node(schild);
+ 
+    for (uint32_t i = 0; i < ntk.fanin_size(n); i++) {
+      auto nchild = ntk.get_children(n,i);
       longest = get_path(nchild, depth, curr_depth+1);
       if (longest) {
         critical_path.push_back(n);
-        return false;
-      } 
-      return true;
-    });
-
-    return longest;
+        break;
+      }
+    }
+    if (longest) return true;
+    else return false; 
   }
 
   // find longest path and place it on carry
   // currently: finds the first longest path
   void find_critical_paths(uint32_t depth) {
     std::cout << "finding depth " << depth << "\n";
-    ntk.foreach_po( [&]( auto s ) {
-
-      auto n = ntk.get_node(s);
+    for (uint32_t i = 0; i < ntk.num_pos(); i++) {
+      auto n = ntk.get_po(i);
 
       //std::cout << n << ":"; 
-      get_path(n,depth,0); 
+      if (get_path(n,depth,0)) break;
       //std::cout << "\n";
-    });
+    }
 
-    
-    std::cout << "\n";
     for (uint i = 0; i < critical_path.size(); i++) 
       std::cout << critical_path[i] << " "; 
     std::cout << "\n";
