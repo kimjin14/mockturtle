@@ -497,6 +497,18 @@ public:
     return f.index;
   }
 
+  node get_children (node const& n, uint32_t i) const
+  {
+    assert(i < fanin_size(n));
+    return _storage->nodes[n].children[i].index;
+  }
+
+  node get_po (uint32_t i) const
+  {
+    assert(i < num_pos());
+    return _storage->outputs[i].index ;
+  }
+
   signal make_signal( node const& n ) const
   {
     return signal( n, 0 );

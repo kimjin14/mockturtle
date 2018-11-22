@@ -111,14 +111,7 @@ public:
       top_order.push_back( n );
     } );
 
-    auto depth = depth_view<Ntk>(ntk).depth();
-    find_critical_paths(depth);
-    //map_paths_to_carry_chain();
-    //map_to_LUT();
-
-    /*
     init_nodes();
-    //print_state();
     set_mapping_refs<false>();
 
     while ( iteration < ps.rounds )
@@ -131,8 +124,11 @@ public:
       compute_mapping<true>();
     }
 
+    find_critical_paths();
+    map_paths_to_carry_chain();
     derive_mapping();
-    */
+    
+    //print_state();
   }
 
 private:
@@ -145,7 +141,7 @@ private:
 
     if ( ntk.is_constant( n ) || ntk.is_pi( n ) ) {
       if (curr_depth == depth) {
-        //std::cout << n << "(" << curr_depth <<"),";
+        std::cout << n << "(" << curr_depth <<"),";
         critical_path.push_back(n);
         return true;
       } else return false;
@@ -161,17 +157,18 @@ private:
         break;
       }
     }
-    if (longest) return true;
-    else return false; 
+    return longest;
   }
 
   // find longest path and place it on carry
   // currently: finds the first longest path
-  void find_critical_paths(uint32_t depth) {
+  void find_critical_paths() {
+
+    auto depth = depth_view<Ntk>(ntk).depth();
     std::cout << "finding depth " << depth << "\n";
+
     for (uint32_t i = 0; i < ntk.num_pos(); i++) {
       auto n = ntk.get_po(i);
-
       //std::cout << n << ":"; 
       if (get_path(n,depth,0)) break;
       //std::cout << "\n";
@@ -180,6 +177,18 @@ private:
     for (uint i = 0; i < critical_path.size(); i++) 
       std::cout << critical_path[i] << " "; 
     std::cout << "\n";
+  }
+
+  void map_paths_to_carry_chain() {
+     ntk.clear_mapping();
+
+    for (uint32_t i = 0; i < critical_path.size(); i++) {
+      auto const n = critical_path[i];
+      std::vector<node<Ntk>> nodes;
+      if (i < critical_path.size() - 1)
+        nodes.push_back(critical_path[i+1]); 
+      ntk.add_to_mapping (n, nodes.begin(), nodes.end()); 
+    }
   }
 
   void init_nodes()
@@ -433,9 +442,11 @@ private:
 
     for ( auto const& n : top_order )
     {
-      if ( ntk.is_constant( n ) || ntk.is_pi( n ) )
-        continue;
+      if ( ntk.is_constant( n ) || ntk.is_pi( n )) {
 
+        //std::cout << n << ":" << ntk.is_constant( n ) << ntk.is_pi( n ) << ntk.is_cell_root(n) << "\n";
+        continue;
+      }
       const auto index = ntk.node_to_index( n );
       if ( map_refs[index] == 0 )
         continue;
@@ -445,6 +456,7 @@ private:
       {
         nodes.push_back( ntk.index_to_node( l ) );
       }
+      std::cout << "here " << n << "\n";
       ntk.add_to_mapping( n, nodes.begin(), nodes.end() );
 
       if constexpr ( StoreFunction )
@@ -485,7 +497,6 @@ private:
 
   // for carry chain
   std::vector<node<Ntk>> critical_path;
-  uint32_t depth{0};
 };
 
 }; /* namespace detail */

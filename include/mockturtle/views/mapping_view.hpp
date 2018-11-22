@@ -54,7 +54,9 @@ template<>
 struct mapping_view_storage<true>
 {
   std::vector<uint32_t> mappings;
+  std::vector<uint32_t> carry_mappings;
   uint32_t mapping_size{0};
+  uint32_t carry_mapping_size{0};
   std::vector<uint32_t> functions;
   truth_table_cache<kitty::dynamic_truth_table> cache;
 };
@@ -63,7 +65,10 @@ template<>
 struct mapping_view_storage<false>
 {
   std::vector<uint32_t> mappings;
+  // 0 if not in carry chain, number indicates part of which carry chain
+  std::vector<uint32_t> carry_mappings;
   uint32_t mapping_size{0};
+  uint32_t carry_mapping_size{0};
 };
 
 } // namespace detail
@@ -139,6 +144,7 @@ public:
     static_assert( has_node_to_index_v<Ntk>, "Ntk does not implement the node_to_index method" );
 
     _mapping_storage.mappings.resize( ntk.size(), 0 );
+    _mapping_storage.carry_mappings.resize( ntk.size(), 0 );
 
     if constexpr ( StoreFunction )
     {
@@ -165,6 +171,9 @@ public:
     _mapping_storage.mappings.clear();
     _mapping_storage.mappings.resize( this->size(), 0 );
     _mapping_storage.mapping_size = 0;
+    _mapping_storage.carry_mappings.clear();
+    _mapping_storage.carry_mappings.resize( this->size(), 0 );
+    _mapping_storage.carry_mapping_size = 0;
   }
 
   uint32_t num_cells() const
@@ -172,10 +181,34 @@ public:
     return _mapping_storage.mapping_size;
   }
 
+  void add_to_carry_mapping( node const& n, uint32_t carry_index )
+  {
+    auto& cmindex = _mapping_storage.carry_mappings[this->node_to_index( n )];
+    for (int i = 0; i < _mapping_storage.carry_mappings.size(); i++)
+      std::cout << _mapping_storage.carry_mappings[i] << ",";
+    std::cout << "\n";
+
+    // when adding to the carry, it should be only mapped once.
+    assert (cmindex != 0);
+
+
+    //  somehow update how many carry paths have been mapped
+    // or shoudl it be how many MIG nodes has been mapped? not sure yet
+    if ( carry_index > cmindex )
+    {
+      _mapping_storage.carry_mapping_size = carry_index;
+    }
+
+    _mapping_storage.carry_mappings[this->node_to_index( n )] = carry_index;
+  }
+
   template<typename LeavesIterator>
   void add_to_mapping( node const& n, LeavesIterator begin, LeavesIterator end )
   {
     auto& mindex = _mapping_storage.mappings[this->node_to_index( n )];
+    for (int i = 0; i < _mapping_storage.mappings.size(); i++)
+      std::cout << _mapping_storage.mappings[i] << ",";
+    std::cout << "\n";
 
     /* increase mapping size? */
     if ( mindex == 0 )
