@@ -206,9 +206,6 @@ public:
   void add_to_mapping( node const& n, LeavesIterator begin, LeavesIterator end )
   {
     auto& mindex = _mapping_storage.mappings[this->node_to_index( n )];
-    for (int i = 0; i < _mapping_storage.mappings.size(); i++)
-      std::cout << _mapping_storage.mappings[i] << ",";
-    std::cout << "\n";
 
     /* increase mapping size? */
     if ( mindex == 0 )
@@ -227,6 +224,10 @@ public:
     {
       _mapping_storage.mappings.push_back( this->node_to_index( *begin++ ) );
     }
+
+    for (auto mapping : _mapping_storage.mappings) 
+      std::cout << mapping << ",";
+    std::cout << "\n";
   }
 
   void remove_from_mapping( node const& n )

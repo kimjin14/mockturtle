@@ -112,6 +112,8 @@ public:
     } );
 
     init_nodes();
+
+    find_critical_paths();
     set_mapping_refs<false>();
 
     while ( iteration < ps.rounds )
@@ -124,11 +126,11 @@ public:
       compute_mapping<true>();
     }
 
-    find_critical_paths();
+
     map_paths_to_carry_chain();
     derive_mapping();
     
-    //print_state();
+    print_state();
   }
 
 private:
@@ -141,7 +143,6 @@ private:
 
     if ( ntk.is_constant( n ) || ntk.is_pi( n ) ) {
       if (curr_depth == depth) {
-        std::cout << n << "(" << curr_depth <<"),";
         critical_path.push_back(n);
         return true;
       } else return false;
@@ -170,7 +171,9 @@ private:
     for (uint32_t i = 0; i < ntk.num_pos(); i++) {
       auto n = ntk.get_po(i);
       //std::cout << n << ":"; 
-      if (get_path(n,depth,0)) break;
+      if (get_path(n,depth,0)) {
+        break;
+      }
       //std::cout << "\n";
     }
 
@@ -182,11 +185,10 @@ private:
   void map_paths_to_carry_chain() {
      ntk.clear_mapping();
 
-    for (uint32_t i = 0; i < critical_path.size(); i++) {
+    for (uint32_t i = 1; i < critical_path.size(); i++) {
       auto const n = critical_path[i];
       std::vector<node<Ntk>> nodes;
-      if (i < critical_path.size() - 1)
-        nodes.push_back(critical_path[i+1]); 
+      nodes.push_back(critical_path[i-1]); 
       ntk.add_to_mapping (n, nodes.begin(), nodes.end()); 
     }
   }
@@ -240,6 +242,24 @@ private:
         map_refs[index]++;
       }
     } );
+
+    // Anything going into the carry chain should "seem" like a po
+    for (auto const n : critical_path) {
+      if (ntk.is_pi(n)) continue;
+      auto const index = ntk.node_to_index (n); 
+      map_refs[index]++;
+    }
+
+    ntk.foreach_po( [this]( auto s ) {
+      const auto index = ntk.node_to_index( ntk.get_node( s ) );
+      delay = std::max( delay, delays[index] );
+
+      if constexpr ( !ELA )
+      {
+        map_refs[index]++;
+      }
+    } );
+
 
     /* compute current area and update mapping refs */
     area = 0;
@@ -438,15 +458,14 @@ private:
 
   void derive_mapping()
   {
-    ntk.clear_mapping();
+    //ntk.clear_mapping();
 
     for ( auto const& n : top_order )
     {
-      if ( ntk.is_constant( n ) || ntk.is_pi( n )) {
-
-        //std::cout << n << ":" << ntk.is_constant( n ) << ntk.is_pi( n ) << ntk.is_cell_root(n) << "\n";
+      if ( ntk.is_constant( n ) || ntk.is_pi( n ) || ntk.is_cell_root( n ) ) 
         continue;
-      }
+
+      std::cout << "here " << n << "\n";
       const auto index = ntk.node_to_index( n );
       if ( map_refs[index] == 0 )
         continue;
@@ -456,7 +475,6 @@ private:
       {
         nodes.push_back( ntk.index_to_node( l ) );
       }
-      std::cout << "here " << n << "\n";
       ntk.add_to_mapping( n, nodes.begin(), nodes.end() );
 
       if constexpr ( StoreFunction )
@@ -471,7 +489,6 @@ private:
     for ( auto i = 0u; i < ntk.size(); ++i )
     {
       std::cout << fmt::format( "*** Obj = {:>3} (node = {:>3})  FlowRefs = {:5.2f}  MapRefs = {:>2}  Flow = {:5.2f}  Delay = {:>3}\n", i, ntk.index_to_node( i ), flow_refs[i], map_refs[i], flows[i], delays[i] );
-      //std::cout << cuts.cuts( i );
     }
     std::cout << fmt::format( "Level = {}  Area = {}\n", delay, area );
   }
@@ -495,7 +512,7 @@ private:
 
   std::vector<uint32_t> tmp_area; /* temporary vector to compute exact area */
 
-  // for carry chain
+  // Contains the list of nodes in the critical_path
   std::vector<node<Ntk>> critical_path;
 };
 

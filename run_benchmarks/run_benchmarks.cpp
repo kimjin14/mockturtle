@@ -8,7 +8,7 @@
 #include <mockturtle/views/mapping_view.hpp>
 #include <mockturtle/views/depth_view.hpp>
 #include <mockturtle/io/verilog_reader.hpp>
-#include <mockturtle/algorithms/lut_mapping.hpp>
+#include <mockturtle/algorithms/carry_lut_mapping.hpp>
 #include <mockturtle/algorithms/collapse_mapped.hpp>
 #include <mockturtle/networks/mig.hpp>
 #include <mockturtle/networks/klut.hpp>
@@ -27,7 +27,7 @@ int main (int argc, char *argv[]){
   lorina::diagnostic_engine diag;
   lorina::return_code result;
 
-  std::cout << argv[1] << ",";
+  //std::cout << argv[1] << ",";
   
   // Read Verilog into a MIG network.
   result = lorina::read_verilog(argv[1], verilog_reader(mig) ,&diag);
@@ -37,12 +37,13 @@ int main (int argc, char *argv[]){
 
   // Use depth_view to report the depth of the MIG network.
   depth_view depth_mig { mig }; 
-  std::cout << mig.num_gates() << "," << depth_mig.depth() << ",";
+  //std::cout << mig.num_gates() << "," << depth_mig.depth() << ",";
  
   // Map MIG to 6LUT
   mapping_view <mig_network, true> mapped_mig { mig };
+  carry_lut_mapping (mapped_mig);  
   //lut_mapping <mapping_view<mig_network,true>,true> (mapped_mig); // for storing fcn
-  lut_mapping (mapped_mig);
+  //lut_mapping (mapped_mig);
 
   // Collapse mapped MIG to LUT network
   const auto klut_opt = collapse_mapped_network<klut_network>( mapped_mig );
@@ -50,7 +51,7 @@ int main (int argc, char *argv[]){
   depth_view depth_klut { klut }; 
 
   std::cout << klut.num_gates() << "," << depth_klut.depth();
-  mig.clear_values();
+  //mig.clear_values();
 
   std::cout << "\n";
 
