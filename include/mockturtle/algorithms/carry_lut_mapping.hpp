@@ -115,22 +115,22 @@ public:
 
     find_critical_paths();
     set_mapping_refs<false>();
+    print_state();
 
     while ( iteration < ps.rounds )
     {
       compute_mapping<false>();
+      print_state();
     }
 
     while ( iteration < ps.rounds + ps.rounds_ela )
     {
       compute_mapping<true>();
+      print_state();
     }
 
-
-    map_paths_to_carry_chain();
     derive_mapping();
     
-    print_state();
   }
 
 private:
@@ -143,7 +143,7 @@ private:
 
     if ( ntk.is_constant( n ) || ntk.is_pi( n ) ) {
       if (curr_depth == depth) {
-        critical_path.push_back(n);
+        //critical_path.push_back(n);
         return true;
       } else return false;
     }
@@ -180,17 +180,6 @@ private:
     for (uint i = 0; i < critical_path.size(); i++) 
       std::cout << critical_path[i] << " "; 
     std::cout << "\n";
-  }
-
-  void map_paths_to_carry_chain() {
-     ntk.clear_mapping();
-
-    for (uint32_t i = 1; i < critical_path.size(); i++) {
-      auto const n = critical_path[i];
-      std::vector<node<Ntk>> nodes;
-      nodes.push_back(critical_path[i-1]); 
-      ntk.add_to_mapping (n, nodes.begin(), nodes.end()); 
-    }
   }
 
   void init_nodes()
@@ -247,18 +236,11 @@ private:
     for (auto const n : critical_path) {
       if (ntk.is_pi(n)) continue;
       auto const index = ntk.node_to_index (n); 
-      map_refs[index]++;
-    }
-
-    ntk.foreach_po( [this]( auto s ) {
-      const auto index = ntk.node_to_index( ntk.get_node( s ) );
-      delay = std::max( delay, delays[index] );
-
       if constexpr ( !ELA )
       {
         map_refs[index]++;
       }
-    } );
+    }
 
 
     /* compute current area and update mapping refs */
@@ -282,6 +264,8 @@ private:
       }
       area++;
     }
+
+
 
     /* blend flow referenes */
     for ( auto i = 0u; i < ntk.size(); ++i )
@@ -456,20 +440,38 @@ private:
     }
   }
 
+  void map_paths_to_carry_chain()
+  {
+
+    for (auto const n: critical_path)
+    {
+      std::vector<node<Ntk>> nodes;
+
+      for (uint32_t c = 0; c < ntk.fanin_size(n); c++)
+      {
+        auto nchild = ntk.get_children(n,c);
+        nodes.push_back(nchild);
+      }
+
+      ntk.add_to_mapping (n, nodes.begin(), nodes.end()); 
+    }
+  }
+
   void derive_mapping()
   {
-    //ntk.clear_mapping();
+    ntk.clear_mapping();
+    //map_paths_to_carry_chain();
 
     for ( auto const& n : top_order )
     {
       if ( ntk.is_constant( n ) || ntk.is_pi( n ) || ntk.is_cell_root( n ) ) 
         continue;
 
-      std::cout << "here " << n << "\n";
       const auto index = ntk.node_to_index( n );
       if ( map_refs[index] == 0 )
         continue;
 
+      std::cout << "here " << n << "\n";
       std::vector<node<Ntk>> nodes;
       for ( auto const& l : cuts.cuts( index ).best() )
       {
