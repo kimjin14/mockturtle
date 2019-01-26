@@ -85,7 +85,6 @@ class lut_mapping_impl
 public:
   using network_cuts_t = network_cuts<Ntk, StoreFunction, CutData>;
   using cut_t = typename network_cuts_t::cut_t;
-  //using node = typename Ntk::node;
 
 public:
   lut_mapping_impl( Ntk& ntk, lut_mapping_params const& ps, lut_mapping_stats& st )
@@ -211,16 +210,25 @@ private:
       if ( ntk.is_constant( n ) || ntk.is_pi( n ) )
         continue;
 
-      for (uint32_t i = 0; i < critical_path.size(); i+=2) {
-        if (index == critical_path[i] || index == critical_path[i+1]) {
+      // If node is in carry chain, remove illegal cuts
+      for (uint32_t i = 1; i < critical_path.size(); i+=2) {
+        if (n == critical_path[i]) {
+
           carry_index = true;
+          auto const& n_connected = critical_path[i+1];
+          auto const& index_carryin = critical_path[i-1];
+          uint32_t index_carryout = 0;
+          if (i+2 < critical_path.size())
+            index_carryout = ntk.node_to_index (critical_path[i+2]);
+          std::cout << n << "&" << n_connected << "\n";
+          compute_best_cut_carry<ELA>( ntk.node_to_index( n ), ntk.node_to_index (n_connected), \
+            ntk.node_to_index(index_carryin), index_carryout );
         }
       }
-
-      if (carry_index) 
-        compute_best_cut_carry<ELA>( ntk.node_to_index( n ) );
-      else
+      if (!carry_index) {
+        std::cout << n << "\n";
         compute_best_cut<ELA>( ntk.node_to_index( n ) );
+      }
     }
     set_mapping_refs<ELA>();
     //print_state();
@@ -285,9 +293,78 @@ private:
     ++iteration;
   }
 
-  bool cut_check_legality ( cut_t const& cut1, cut_t const& cut2 ) {
+
+  bool cut_check_legality( cut_t const& cut1, cut_t const& cut2, int index1, int index2, 
+      int carryin, int carryout ) {
+
+    std::cout << "cut 1" << cut1 << "\n"; 
+    std::cout << "cut 2" << cut2 << "\n"; 
+  
+    // There can be total of 8 unique inputs other than the "carry in and carry out"
+    uint32_t curr_inputs = 0;
+    uint32_t unique_inputs[8];
+    bool in_list = false;
+    for ( auto leaf : cut1 )
+    {
+      if (leaf != carryin | leaf != carryout | leaf != index1 | leaf != index2) {
+        in_list = false;
+        for (uint32_t i = 0; i < curr_inputs; i++) {
+          if (unique_inputs[i] == leaf)
+            in_list = true;
+        }
+
+        if (curr_inputs < 8 && in_list == false) {
+          unique_inputs[curr_inputs] = leaf;
+          curr_inputs++;
+        } else {
+          std::cout << "wrong" << "\n";
+          continue;
+        }
+          
+      }
+  
+    }
+    for ( auto leaf : cut2 )
+    {
+      if (leaf != carryin | leaf != carryout | leaf != index1 | leaf != index2) {
+        in_list = false;
+        for (uint32_t i = 0; i < curr_inputs; i++) {
+          if (unique_inputs[i] == leaf)
+            in_list = true;
+        }
+
+        if (curr_inputs < 8 && in_list == false) {
+          unique_inputs[curr_inputs] = leaf;
+          curr_inputs++;
+        } else {
+          std::cout << "wrong" << "\n";
+          continue;
+        }
+          
+      }
+    }
     
-    for ( auto leaf: 
+    
+
+
+    return true;
+  }
+
+  std::pair<float, uint32_t> cut_flow_carry( cut_t const& cut1, cut_t const& cut2)
+  {
+    uint32_t time{0u};
+    float flow{0.0f};
+    for ( auto leaf : cut1 )
+    {
+      time = std::max( time, delays[leaf] );
+      flow += flows[leaf];
+    }
+    for ( auto leaf : cut2 )
+    {
+      time = std::max( time, delays[leaf] );
+      flow += flows[leaf];
+    }
+    return {flow + cut_area( cut1 ) + cut_area( cut2), time + 1u};
   }
 
   std::pair<float, uint32_t> cut_flow( cut_t const& cut )
@@ -387,98 +464,86 @@ private:
     return count;
   }
 
+  /* this computes the best cut for two nodes at the same time
+    since both nodes will be packed to the same ALM */
   template<bool ELA>
-  void compute_best_cut_carry( uint32_t index, uint32_t index )
+  void compute_best_cut_carry( uint32_t index1, uint32_t index2, uint32_t index_carryin, uint32_t index_carryout )
   {
     constexpr auto mf_eps{0.005f};
 
     float flow;
     uint32_t time{0};
-    int32_t best_cut{-1};
+    int32_t best_cut1{-1};
+    int32_t best_cut2{-1};
     float best_flow{std::numeric_limits<float>::max()};
     uint32_t best_time{std::numeric_limits<uint32_t>::max()};
-    int32_t cut_index{-1};
+    int32_t cut_index1{-1};
+    int32_t cut_index2{-1};
 
-    if constexpr ( ELA )
-    {
-      if ( map_refs[index] > 0 )
-      {
-        cut_deref( cuts.cuts( index )[0] );
-      }
-    }
+    //if constexpr ( ELA )
+    //{
+    //  if ( map_refs[index] > 0 )
+    //  {
+    //    cut_deref( cuts.cuts( index1 )[0] );
+    //  }
+    //}
 
-    // given the cuts, select the best cut
-    // treat special if it's supposed to be mapped to carry chain
-        for ( auto* cut : cuts.cuts( index ) )
+    for (auto* cut1: cuts.cuts(index1)) {
+      ++cut_index1;
+      // might need cuts of size itself if no legal mapping can be found
+      //if ( cut1->size() == 1 )
+      //  continue;
+      cut_index2 = 0;
+      for (auto* cut2: cuts.cuts(index2)) {
+        ++cut_index2;
+        if constexpr ( ELA )
         {
-          ++cut_index;
-          if ( cut->size() == 1 )
-            continue;
-
-          if constexpr ( ELA )
-          {
-            flow = static_cast<float>( cut_area_estimation( *cut ) );
-          }
-          else
-          {
-            std::tie( flow, time ) = cut_flow( *cut );
-          }
-
-          if ( best_cut == -1 || best_flow > flow + mf_eps || ( best_flow > flow - mf_eps && best_time > time ) )
-          {
-            best_cut = cut_index;
-            best_flow = flow;
-            best_time = time;
-          }
+          flow = static_cast<float>( cut_area_estimation( *cut1 ) );
         }
-        cut_check_legality ( *cut  );
-      }
-    } 
+        else
+        {
+          if (cut_check_legality(*cut1, *cut2 , index1, index2, index_carryin, index_carryout))
+            std::tie( flow, time ) = cut_flow_carry( *cut1, *cut2);
+        }
 
-    for ( auto* cut : cuts.cuts( index ) )
-    {
-      ++cut_index;
-      if ( cut->size() == 1 )
-        continue;
-
-      if constexpr ( ELA )
-      {
-        flow = static_cast<float>( cut_area_estimation( *cut ) );
-      }
-      else
-      {
-        std::tie( flow, time ) = cut_flow( *cut );
-      }
-
-      if ( best_cut == -1 || best_flow > flow + mf_eps || ( best_flow > flow - mf_eps && best_time > time ) )
-      {
-        best_cut = cut_index;
-        best_flow = flow;
-        best_time = time;
+        if ( best_cut1 == -1 || best_flow > flow + mf_eps || ( best_flow > flow - mf_eps && best_time > time ) )
+        {
+          best_cut1 = cut_index1;
+          best_cut2 = cut_index2;
+          best_flow = flow;
+          best_time = time;
+        }
       }
     }
 
-    if constexpr ( ELA )
-    {
-      if ( map_refs[index] > 0 )
-      {
-        cut_ref( cuts.cuts( index )[best_cut] );
-      }
-    }
-    else
-    {
-      map_refs[index] = 0;
-    }
-    if constexpr ( ELA )
-    {
-      best_time = cut_flow( cuts.cuts( index )[best_cut] ).second;
-    }
-    delays[index] = best_time;
-    flows[index] = best_flow / flow_refs[index];
+    //if constexpr ( ELA )
+    //{
+    //  if ( map_refs[index] > 0 )
+    //  {
+    //    cut_ref( cuts.cuts( index )[best_cut] );
+    //  }
+    //}
+    //else
+    //{
+      map_refs[index1] = 0;
+      map_refs[index2] = 0;
+    //}
+    //if constexpr ( ELA )
+    //{
+    //  best_time = cut_flow( cuts.cuts( index )[best_cut] ).second;
+    //}
+    delays[index1] = best_time;
+    flows[index1] = best_flow / flow_refs[index1];
+    delays[index2] = best_time;
+    flows[index2] = best_flow / flow_refs[index2];
 
-    if ( best_cut != 0 )
+    if ( best_cut1 != 0 )
     {
-      cuts.cuts( index ).update_best( best_cut );
+      cuts.cuts( index1 ).update_best( best_cut1 );
+    }
+    if ( best_cut2 != 0 )
+    {
+      cuts.cuts( index2 ).update_best( best_cut2 );
     }
   }
 
@@ -523,6 +588,7 @@ private:
         best_cut = cut_index;
         best_flow = flow;
         best_time = time;
+        std::cout << "best_cut = " << best_cut << "\n";
       }
     }
 
