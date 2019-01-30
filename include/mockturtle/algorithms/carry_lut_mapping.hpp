@@ -254,7 +254,7 @@ private:
     // Anything going into the carry chain should "seem" like a po
     for (auto const n : critical_path) {
       if (ntk.is_pi(n)) continue;
-      auto const index = ntk.node_to_index (n); 
+      const auto index = ntk.node_to_index (n); 
       if constexpr ( !ELA )
       {
         map_refs[index]++;
@@ -294,112 +294,110 @@ private:
   }
 
 
-  bool cut_check_legality( cut_t const& cut1, cut_t const& cut2, int index1, int index2, 
-      int carryin, int carryout ) {
+  bool insert_unique_input (node<Ntk> node, uint32_t* index_array, uint32_t* curr_index, uint32_t index1, uint32_t index2, 
+      uint32_t carryin, uint32_t carryout ) {
+
+    bool in_list = false;
+    auto const& index = ntk.node_to_index(node);
+    if ((index != carryin) | (index != carryout) | (index != index1) | (index != index2)) {
+
+      for (uint32_t i = 0; i < *curr_index; i++) {
+        if (index_array[i] == index) 
+          in_list = true;
+      }
+      
+      // if there isn't 8 unique inputs yet, add 
+      if (*curr_index < 8 && in_list == false) {
+        index_array[*curr_index] = index;
+        (*curr_index)++;
+        return true;
+      } else if (*curr_index >= 8 && in_list == false) {
+        return false;
+      } else return true; 
+
+    } else {
+
+      // one of the special inputs, doesn't count towards unique input count
+      return true;
+    }
+    return false;
+  }
+
+  bool cut_check_legality( cut_t const& cut1, cut_t const& cut2, uint32_t index1, uint32_t index2, 
+      uint32_t carryin, uint32_t carryout ) {
 
     std::cout << "Cut check:\n";
-    std::cout << "\t" << cut1 << "\n";
-    std::cout << "\t" << cut2 << "\n";
 
     // CHECK #1
     // Each cut should be size for 4 LUT
-    if (cut1.size() > 4 ) return false;
-    if (cut2.size() > 4 ) return false;
-    std::cout << "\tPassed 4 LUT test\n";
+    //if (cut1.size() > 4 ) return false;
+    //if (cut2.size() > 4 ) return false;
+    //std::cout << "\tPassed 4 LUT test\n";
+    std::cout << "\t" << cut1 << "\n";
+    std::cout << "\t" << cut2 << "\n";
   
     // CHECK #2
     // Inputs to these nodes in the cut must not have more than 8 unique inputs
     uint32_t curr_inputs = 0;
     uint32_t unique_inputs[8];
-    bool in_list = false;
+    std::cout << "\tChecking cut 1\n";
     for (uint32_t leaf : cut1 ) {
 
       auto const& leaf_node = ntk.index_to_node(leaf);
-      // if leaf is input, no need to check children
-      if (ntk.is_pi(leaf_node)) continue;
 
-      // check the children of the cut
-      for (uint32_t i_fanin = 0; i_fanin < ntk.fanin_size(leaf_node); i_fanin++) { 
-        
-        node<Ntk> child_leaf_node = ntk.get_children (leaf_node, i_fanin);  
-        if (ntk.is_pi(leaf_node)) 
-          child_leaf_node = leaf_node;  
+      // If in carry connection, skip
+      if ((leaf_node == carryin) | (leaf_node == carryout) | \
+          (leaf_node == index1) | (leaf_node == index2)) 
+        continue;
 
-        auto const& child_leaf_index = ntk.node_to_index(child_leaf_node);
-        //std::cout << "\tchild: " << child_leaf_node << " ";
-        if (child_leaf_index != carryin | child_leaf_index != carryout | 
-            child_leaf_index != index1 | child_leaf_index != index2) {
-          in_list = false;
-          for (uint32_t i = 0; i < curr_inputs; i++) {
-            if (unique_inputs[i] == child_leaf_index)
-              in_list = true;
-          }
+      if (ntk.is_pi(leaf_node)) {
+        if (!insert_unique_input (leaf_node, unique_inputs, &curr_inputs,
+            index1, index2, carryin, carryout)) return false;
+      } else {
 
-          if (curr_inputs < 8 && in_list == false) {
-            //std::cout << curr_inputs ;
-            unique_inputs[curr_inputs] = child_leaf_index;
-            curr_inputs++;
-          } else if (curr_inputs >= 8 && in_list == false) {
-            return false;
-          } else {
-            continue;
-          }
-        } 
-        //std::cout << "\n";
+        // if leaf is input, no need to check children
+        // check the children of the cut
+        for (uint32_t i_fanin = 0; i_fanin < ntk.fanin_size(leaf_node); i_fanin++) { 
+          //std::cout << "\t\t";
+          node<Ntk> child_leaf_node = ntk.get_children (leaf_node, i_fanin);  
+          //std::cout << child_leaf_node << "\n";
+  
+          if (!insert_unique_input (child_leaf_node, unique_inputs, &curr_inputs,
+              index1, index2, carryin, carryout)) return false;
+        }
       }
     }
+    std::cout << "\tChecking cut 2\n";
     for (auto leaf : cut2 ) {
 
       // check the children of the cut
       auto const& leaf_node = ntk.index_to_node(leaf);
        
-      for (uint32_t i_fanin = 0; i_fanin < ntk.fanin_size(leaf_node); i_fanin++) { 
-      
-        auto const& child_leaf_node = ntk.get_children (leaf_node, i_fanin);  
-        auto const& child_leaf_index = ntk.node_to_index(child_leaf_node);
-        if (child_leaf_index != carryin | child_leaf_index != carryout | 
-            child_leaf_index != index1 | child_leaf_index != index2) {
-          in_list = false;
-          for (uint32_t i = 0; i < curr_inputs; i++) {
-            if (unique_inputs[i] == child_leaf_index)
-              in_list = true;
-          }
+      // If in carry connection, skip
+      if ((leaf_node == carryin) | (leaf_node == carryout) | \
+          (leaf_node == index1) | (leaf_node == index2)) 
+        continue;
 
-          if (curr_inputs < 8 && in_list == false) {
-            unique_inputs[curr_inputs] = child_leaf_index;
-            curr_inputs++;
-          } else if (curr_inputs >= 8 && in_list == false) {
-            return false;
-          } else {
-            continue;
-          }
+      if (ntk.is_pi(leaf_node)) {
+        if (!insert_unique_input (leaf_node, unique_inputs, &curr_inputs,
+            index1, index2, carryin, carryout)) return false;
+      } else {
+
+        // if leaf is input, no need to check children
+        // check the children of the cut
+        for (uint32_t i_fanin = 0; i_fanin < ntk.fanin_size(leaf_node); i_fanin++) { 
+          //std::cout << "\t\t";
+          node<Ntk> child_leaf_node = ntk.get_children (leaf_node, i_fanin);  
+          //std::cout << child_leaf_node << "\n";
+  
+          if (!insert_unique_input (child_leaf_node, unique_inputs, &curr_inputs,
+              index1, index2, carryin, carryout)) return false;
         }
       }
     }
     std::cout << "\tPassed 8 shared input test\n";
 
-    /*for ( auto leaf : cut2 )
-    {
-      if (leaf != carryin | leaf != carryout | leaf != index1 | leaf != index2) {
-        in_list = false;
-        for (uint32_t i = 0; i < curr_inputs; i++) {
-          if (unique_inputs[i] == leaf)
-            in_list = true;
-        }
-
-        if (curr_inputs < 8 && in_list == false) {
-          unique_inputs[curr_inputs] = leaf;
-          curr_inputs++;
-        } else if (curr_inputs >= 8 && in_list == false) {
-          return false;
-        } else {
-          continue;
-        }
-      }
-    }
-    */
-
-    for (int i = 0; i < curr_inputs; i++)
+    for (uint32_t i = 0; i < curr_inputs; i++)
       std::cout << unique_inputs[i] << " " ;
     std::cout << "\n";
 
@@ -648,7 +646,7 @@ private:
         best_cut = cut_index;
         best_flow = flow;
         best_time = time;
-        std::cout << "best_cut = " << best_cut << "\n";
+        //std::cout << "best_cut = " << best_cut << "\n";
       }
     }
 
