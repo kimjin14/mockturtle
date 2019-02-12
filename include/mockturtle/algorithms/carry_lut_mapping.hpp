@@ -114,7 +114,7 @@ public:
 
     find_critical_paths();
     set_mapping_refs<false>();
-    print_state();
+    //print_state();
 
     while ( iteration < ps.rounds )
     {
@@ -205,6 +205,7 @@ private:
   void compute_mapping()
   {
     bool carry_index = false;
+    uint32_t special_map = 0;
     for ( auto const& n : top_order )
     {
       if ( ntk.is_constant( n ) || ntk.is_pi( n ) )
@@ -215,21 +216,22 @@ private:
         if (n == critical_path[i]) {
 
           carry_index = true;
-          auto const& n_connected = critical_path[i+1];
+          auto n_connected = critical_path[i];
+          if (i+1 < critical_path.size())
+            n_connected = critical_path[i+1];
           auto const& index_carryin = critical_path[i-1];
           uint32_t index_carryout = 0;
-          if (i+2 < critical_path.size())
-            index_carryout = ntk.node_to_index (critical_path[i+2]);
           std::cout << n << "&" << n_connected << "\n";
           compute_best_cut_carry<ELA>( ntk.node_to_index( n ), ntk.node_to_index (n_connected), \
-            ntk.node_to_index(index_carryin), index_carryout );
+            ntk.node_to_index(index_carryin), &special_map);
         }
       }
       if (!carry_index) {
-        std::cout << n << "\n";
+        //std::cout << n << "\n";
         compute_best_cut<ELA>( ntk.node_to_index( n ) );
       }
     }
+    std::cout << "Number of special mapping of nodes: " << special_map << "\n";
     set_mapping_refs<ELA>();
     //print_state();
   }
@@ -295,92 +297,280 @@ private:
 
 
   bool insert_unique_input (node<Ntk> node, uint32_t* index_array, uint32_t* curr_index, uint32_t index1, uint32_t index2, 
-      uint32_t carryin, uint32_t carryout ) {
+      uint32_t carryin, uint32_t carryout, uint32_t max_num) {
 
     bool in_list = false;
     auto const& index = ntk.node_to_index(node);
-    if ((index != carryin) | (index != carryout) | (index != index1) | (index != index2)) {
+    //if ((index != carryin) | (index != carryout) | (index != index1) | (index != index2)) {
 
       for (uint32_t i = 0; i < *curr_index; i++) {
         if (index_array[i] == index) 
           in_list = true;
       }
       
+      std::cout << "Inserting " << index << " to " << *curr_index << " position.\n";
       // if there isn't 8 unique inputs yet, add 
-      if (*curr_index < 8 && in_list == false) {
+      if (*curr_index < max_num && in_list == false) {
         index_array[*curr_index] = index;
         (*curr_index)++;
         return true;
-      } else if (*curr_index >= 8 && in_list == false) {
+      } else if (*curr_index >= max_num && in_list == false) {
         return false;
       } else return true; 
 
-    } else {
+    //} else {
 
       // one of the special inputs, doesn't count towards unique input count
+      //return true;
+    //}
+    return false;
+  }
+
+  uint32_t find_unique_set (uint32_t* n_shared, uint32_t input_array[2][5], \
+      uint32_t unique_array[8]) {
+
+    bool match = false;
+    uint32_t index = 0;
+
+    for (uint32_t i = 0; i < input_array[0][0]; i++) {
+      for (uint32_t j = 0; j < input_array[1][0]; j++) {
+        if (input_array[0][i+1] == input_array[1][j+1]) {
+          unique_array[*n_shared] = input_array[0][i+1];  
+          (*n_shared)++;
+          index++;
+          match = true;
+          continue;
+        } 
+      }
+      if (!match) {
+        //unique_array[*n_shared] = input_array[0][i+1];  
+        index++;
+      }
+      match = false;
+    }
+    for (uint32_t i = 0; i < input_array[1][0]; i++) {
+      for (uint32_t j = 0; j < input_array[0][0]; j++) {
+        if (input_array[0][i+1] == input_array[1][j+1]) {
+          match = true;
+          continue;
+        } 
+      }
+      if (!match) {
+        //unique_array[index] = input_array[1][i+1];  
+        index++;
+      }
+      match = false;
+    } 
+
+    return index;
+  }
+
+  void insert_child_to_array (uint32_t input_array[2][5], uint32_t index1, uint32_t index2,
+      uint32_t carryin) {
+
+    uint32_t curr_LUT = 0;
+    uint32_t curr_input= 0;
+    auto const& node1 = ntk.index_to_node(index1);
+    assert (ntk.fanin_size(node1) == 3);
+    for (uint32_t i_fanin = 0; i_fanin < ntk.fanin_size(node1); i_fanin++) { 
+      node<Ntk> leaf_node = ntk.get_children (node1, i_fanin);  
+      
+      if ((leaf_node == carryin) | (leaf_node == index1) | (leaf_node == index2)) {
+        continue;
+      } else {
+        assert (curr_LUT < 2);
+        input_array[curr_LUT][0] = 0;
+        if (ntk.is_constant(leaf_node)) {
+          
+        } else if (ntk.is_pi(leaf_node)) {
+          input_array[curr_LUT][0]++;
+          input_array[curr_LUT][curr_input+1] = leaf_node;
+          //std::cout << "input_array[" << curr_LUT << "][" << curr_input+1 << "] = " << leaf_node << ";\n";
+          curr_input++;
+        } else {
+          // Check the children of the cut for inputs
+          for (uint32_t i_fanin = 0; i_fanin < ntk.fanin_size(leaf_node); i_fanin++) { 
+            node<Ntk> child_leaf_node = ntk.get_children (leaf_node, i_fanin);  
+            input_array[curr_LUT][0]++;
+            input_array[curr_LUT][curr_input+1] = child_leaf_node;
+            //std::cout << "input_array[" << curr_LUT << "][" << curr_input+1 << "] = " << child_leaf_node << ";\n";
+            curr_input++;
+          }
+        }
+        curr_LUT++;
+        curr_input = 0;
+      }
+    }
+  }
+
+  // Takes 2 indices and the carryin node value and determines whether its
+  // children can fit into the LUTs preceding FA
+  bool check_child_node (uint32_t index1, uint32_t index2, uint32_t carryin, uint32_t* n_mapped) {
+ 
+    // Array holding the nodes to the halfs of ALM as separate 4-LUT
+    uint32_t index1_inputs[2][5]; 
+    uint32_t index2_inputs[2][5]; 
+
+    // Each node should have 3 children, where 1 is mapped to carry in
+    // 2 inputs should use LUTs with above restrictions
+    insert_child_to_array (index1_inputs, index1, index2, carryin);
+    insert_child_to_array (index2_inputs, index2, index1, carryin);
+   /* 
+
+    index1_inputs[0][0] = 4;
+    index1_inputs[0][1] = 0; 
+    index1_inputs[0][2] = 1; 
+    index1_inputs[0][3] = 2; 
+    index1_inputs[0][4] = 3; 
+
+    index1_inputs[1][0] = 4;
+    index1_inputs[1][1] = 0; 
+    index1_inputs[1][2] = 1; 
+    index1_inputs[1][3] = 2; 
+    index1_inputs[1][4] = 4; 
+
+    index2_inputs[0][0] = 4;
+    index2_inputs[0][1] = 0; 
+    index2_inputs[0][2] = 1; 
+    index2_inputs[0][3] = 4; 
+    index2_inputs[0][4] = 5; 
+
+    index2_inputs[1][0] = 4;
+    index2_inputs[1][1] = 0; 
+    index2_inputs[1][2] = 1; 
+    index2_inputs[1][3] = 4; 
+    index2_inputs[1][4] = 3; 
+    for (uint32_t i = 0; i < index1_inputs[0][0]; i++) {
+      //index1_inputs[0][i+1] = i;
+      std::cout << index1_inputs[0][i+1] << " ";
+    }
+    std::cout << "\n";
+    for (uint32_t i = 0; i < index1_inputs[1][0]; i++) {
+      //index1_inputs[1][i+1] = i;
+      std::cout << index1_inputs[1][i+1] << " ";
+    }
+    std::cout << "\n";
+    for (uint32_t i = 0; i < index2_inputs[0][0]; i++) {
+      //index2_inputs[0][i+1] = i+3;
+      std::cout << index2_inputs[0][i+1] << " ";
+    }
+    std::cout << "\n";
+    for (uint32_t i = 0; i < index2_inputs[1][0]; i++) {
+      //index2_inputs[1][i+1] = i+3;
+      std::cout << index2_inputs[1][i+1] << " ";
+    }
+    std::cout << "\n";
+
+*/
+    // Check if inputs are legal
+    // index1 can't have more than 5 unique inputs
+    //    e0 c b a
+    //    f0 c b a
+    //    e1 d b a
+    //    f1 d b a
+    uint32_t abce0f0[8] = {0,0,0,0,0};
+    uint32_t abde1f1[8] = {0,0,0,0,0};
+  
+    uint32_t n_unique_index1 = 0;
+    uint32_t n_unique_index2 = 0;
+   
+    // compare first 2 4-LUT and count matches and unique innputs 
+    uint32_t n_shared_index1 = 0;
+    uint32_t n_shared_index2 = 0;
+    n_unique_index1 = find_unique_set (&n_shared_index1, index1_inputs, abce0f0);
+    n_unique_index2 = find_unique_set (&n_shared_index2, index2_inputs, abde1f1);
+
+    if (n_unique_index1 > 5 && n_unique_index2 > 5) {
+      return false;
+    }
+    if (n_unique_index1 > 5 || n_unique_index2 > 5) {
+      //std::cout << "index1 node cannot fit\n";
+      *n_mapped = 1;
+    }
+    if (n_unique_index2 > 5) {
+      //std::cout << "index2 node cannot fit\n";
+      *n_mapped = 1;
+    }
+
+    // check if there are at least 2 shared inputs if index == 5
+    uint32_t n_matches = 0; 
+    for (uint32_t i = 0; i < n_shared_index1; i++) {
+      for (uint32_t j = 0; j < n_shared_index2; j++) {
+        if (abce0f0[i] == abde1f1[j]) n_matches++;
+      }
+    }
+/*
+    for (int i = 0; i < 5; i++) {
+      std::cout << abce0f0[i] << " ";
+    }
+    std::cout << "\n";
+    for (int i = 0; i < 5; i++) {
+      std::cout << abde1f1[i] << " ";
+    }
+    std::cout << "\n";
+    std::cout << n_unique_index1 << "\n";
+    std::cout << n_unique_index2 << "\n";
+    std::cout << n_matches << "\n";
+*/
+    if ((n_unique_index1 == 5 || n_unique_index2 == 5) && n_matches >= 2 || 
+        (n_unique_index1 == 4 || n_unique_index2 == 4) && n_matches >= 1) {
+      *n_mapped = 2;
       return true;
     }
     return false;
-  }
+  } 
 
   bool cut_check_legality( cut_t const& cut1, cut_t const& cut2, uint32_t index1, uint32_t index2, 
       uint32_t carryin, uint32_t carryout ) {
 
-    std::cout << "Cut check:\n";
+    // Checking the usage of (Stratix V) LUTs before mapping MIG node to carry
+    // 1. inputs to the cuts (unless it is a PI or carry signal) cannot be more than 8
+    // 2. each node can have at most 2 pairs of unique inputs
 
-    // CHECK #1
-    // Each cut should be size for 4 LUT
-    //if (cut1.size() > 4 ) return false;
-    //if (cut2.size() > 4 ) return false;
-    //std::cout << "\tPassed 4 LUT test\n";
-    std::cout << "\t" << cut1 << "\n";
-    std::cout << "\t" << cut2 << "\n";
-  
-    // CHECK #2
-    // Inputs to these nodes in the cut must not have more than 8 unique inputs
+    // Each node can have 4 unique inputs
     uint32_t curr_inputs = 0;
     uint32_t unique_inputs[8];
-    std::cout << "\tChecking cut 1\n";
+
     for (uint32_t leaf : cut1 ) {
 
       auto const& leaf_node = ntk.index_to_node(leaf);
 
-      // If in carry connection, skip
-      if ((leaf_node == carryin) | (leaf_node == carryout) | \
+      // If its one of carry connection, skip
+      if (ntk.is_constant(leaf_node) | (leaf_node == carryin) | (leaf_node == carryout) | \
           (leaf_node == index1) | (leaf_node == index2)) 
         continue;
 
+      // If leaf is input, no need to check children
       if (ntk.is_pi(leaf_node)) {
         if (!insert_unique_input (leaf_node, unique_inputs, &curr_inputs,
-            index1, index2, carryin, carryout)) return false;
+            index1, index2, carryin, carryout, 6)) return false;
       } else {
 
-        // if leaf is input, no need to check children
-        // check the children of the cut
+        // Check the children of the cut for inputs
         for (uint32_t i_fanin = 0; i_fanin < ntk.fanin_size(leaf_node); i_fanin++) { 
-          //std::cout << "\t\t";
           node<Ntk> child_leaf_node = ntk.get_children (leaf_node, i_fanin);  
-          //std::cout << child_leaf_node << "\n";
   
           if (!insert_unique_input (child_leaf_node, unique_inputs, &curr_inputs,
-              index1, index2, carryin, carryout)) return false;
+              index1, index2, carryin, carryout, 6)) return false;
         }
       }
     }
-    std::cout << "\tChecking cut 2\n";
+    std::cout << "\tPassed 4 unique input test 1\n";
+    
+    curr_inputs = 6;
     for (auto leaf : cut2 ) {
 
       // check the children of the cut
       auto const& leaf_node = ntk.index_to_node(leaf);
        
       // If in carry connection, skip
-      if ((leaf_node == carryin) | (leaf_node == carryout) | \
+      if (ntk.is_constant(leaf_node) | (leaf_node == carryin) | (leaf_node == carryout) | \
           (leaf_node == index1) | (leaf_node == index2)) 
         continue;
 
       if (ntk.is_pi(leaf_node)) {
         if (!insert_unique_input (leaf_node, unique_inputs, &curr_inputs,
-            index1, index2, carryin, carryout)) return false;
+            index1, index2, carryin, carryout, 8)) return false;
       } else {
 
         // if leaf is input, no need to check children
@@ -391,15 +581,16 @@ private:
           //std::cout << child_leaf_node << "\n";
   
           if (!insert_unique_input (child_leaf_node, unique_inputs, &curr_inputs,
-              index1, index2, carryin, carryout)) return false;
+              index1, index2, carryin, carryout, 8)) return false;
         }
       }
     }
-    std::cout << "\tPassed 8 shared input test\n";
+    std::cout << "\tPassed 4 unique input test 2\n";
+    //std::cout << "\tPassed 8 shared input test\n";
 
-    for (uint32_t i = 0; i < curr_inputs; i++)
-      std::cout << unique_inputs[i] << " " ;
-    std::cout << "\n";
+    //for (uint32_t i = 0; i < curr_inputs; i++)
+    //  std::cout << unique_inputs[i] << " " ;
+    //std::cout << "\n";
 
     return true;
   }
@@ -521,7 +712,8 @@ private:
   /* this computes the best cut for two nodes at the same time
     since both nodes will be packed to the same ALM */
   template<bool ELA>
-  void compute_best_cut_carry( uint32_t index1, uint32_t index2, uint32_t index_carryin, uint32_t index_carryout )
+  void compute_best_cut_carry( uint32_t index1, uint32_t index2, \
+      uint32_t index_carryin, uint32_t* n_special_map)
   {
     constexpr auto mf_eps{0.005f};
 
@@ -542,7 +734,17 @@ private:
     //  }
     //}
 
-    for (auto* cut1: cuts.cuts(index1)) {
+    // Evaluate both carry chain nodes in a ALM together
+    // for cuts being valid.
+    uint32_t n_mapped = 0;
+    if (check_child_node(index1, index2, index_carryin, &n_mapped)) {
+      std::cout << "Valid mapping for LUTs before carry chain.\n";
+    }
+    *n_special_map += n_mapped;
+    return;
+
+
+    /*for (auto* cut1: cuts.cuts(index1)) {
       ++cut_index1;
       if ( cut1->size() == 1 )
         continue;
@@ -551,16 +753,14 @@ private:
         if ( cut2->size() == 1 )
           continue;
         ++cut_index2;
-        if constexpr ( ELA )
+        if constexpr ( !ELA )
         {
-          flow = static_cast<float>( cut_area_estimation( *cut1 ) );
-        }
-        else
-        {
-          if (cut_check_legality(*cut1, *cut2 , index1, index2, index_carryin, index_carryout)) {
+          //if (cut_check_legality(*cut1, *cut2 , index1, index2, index_carryin, index_carryout)) {
+          if (check_child_node(index1, index2, index_carryin)) {
             std::cout << "Valid mapping for LUTs before carry chain.\n";
   
             std::tie( flow, time ) = cut_flow_carry( *cut1, *cut2);
+            std::cout << "flow, time = " << flow << "," << time << "\n";
           }
         }
 
@@ -572,24 +772,14 @@ private:
           best_time = time;
         }
       }
-    }
+    }*/
 
-    //if constexpr ( ELA )
-    //{
-    //  if ( map_refs[index] > 0 )
-    //  {
-    //    cut_ref( cuts.cuts( index )[best_cut] );
-    //  }
-    //}
-    //else
-    //{
+    if constexpr ( !ELA) 
+    {
       map_refs[index1] = 0;
       map_refs[index2] = 0;
-    //}
-    //if constexpr ( ELA )
-    //{
-    //  best_time = cut_flow( cuts.cuts( index )[best_cut] ).second;
-    //}
+    }
+
     delays[index1] = best_time;
     flows[index1] = best_flow / flow_refs[index1];
     delays[index2] = best_time;
@@ -705,7 +895,7 @@ private:
       if ( map_refs[index] == 0 )
         continue;
 
-      std::cout << "here " << n << "\n";
+      //std::cout << "here " << n << "\n";
       std::vector<node<Ntk>> nodes;
       for ( auto const& l : cuts.cuts( index ).best() )
       {
