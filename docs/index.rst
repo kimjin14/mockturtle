@@ -21,6 +21,7 @@ Welcome to mockturtle's documentation!
    network
    implementations
    views
+   events
 
 .. toctree::
    :maxdepth: 2
@@ -39,6 +40,7 @@ Welcome to mockturtle's documentation!
    algorithms/cleanup
    algorithms/reconv_cut
    algorithms/dont_cares
+   algorithms/gates_to_nodes
 
 .. toctree::
    :maxdepth: 2
@@ -54,6 +56,12 @@ Welcome to mockturtle's documentation!
    generators/arithmetic
    generators/control
    generators/modular_arithmetic
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Properties
+
+   properties
 
 .. toctree::
    :maxdepth: 2

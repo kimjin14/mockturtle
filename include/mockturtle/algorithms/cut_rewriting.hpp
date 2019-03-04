@@ -36,7 +36,6 @@
 #include <iomanip>
 #include <iostream>
 #include <set>
-#include <unordered_map>
 #include <vector>
 
 #include "../networks/mig.hpp"
@@ -77,6 +76,13 @@ struct cut_rewriting_params
 
   /*! \brief Use don't cares for optimization. */
   bool use_dont_cares{false};
+
+  /*! \brief Candidate selection strategy. */
+  enum
+  {
+    minimize_weight,
+    greedy
+  } candidate_selection_strategy = minimize_weight;
 
   /*! \brief Show progress. */
   bool progress{false};
@@ -206,7 +212,7 @@ inline std::vector<uint32_t> maximum_weighted_independent_set_gwmin( graph& g )
   std::vector<uint32_t> vertices( g.num_vertices() );
   std::iota( vertices.begin(), vertices.end(), 0 );
 
-  std::sort( vertices.begin(), vertices.end(), [&g]( auto v, auto w ) {
+  std::stable_sort( vertices.begin(), vertices.end(), [&g]( auto v, auto w ) {
     const auto value_v = g.gwmin_value( v );
     const auto value_w = g.gwmin_value( w );
     return value_v > value_w || ( value_v == value_w && g.degree( v ) > g.degree( w ) );
@@ -279,14 +285,14 @@ std::tuple<graph, std::vector<std::pair<node<Ntk>, uint32_t>>> network_cuts_grap
 
   ntk.clear_visited();
 
-  ntk.foreach_node( [&]( auto const& n ) {
-    if ( n >= cuts.nodes_size() || ntk.is_constant( n ) || ntk.is_pi( n ) )
+  ntk.foreach_node( [&]( auto const& n, auto index ) {
+    if ( index >= cuts.nodes_size() || ntk.is_constant( n ) || ntk.is_pi( n ) )
       return;
 
     if ( mffc_size( ntk, n ) == 1 )
       return;
 
-    const auto& set = cuts.cuts( static_cast<uint32_t>( n ) );
+    const auto& set = cuts.cuts( ntk.node_to_index( n ) );
 
     auto cctr{0u};
     for ( auto const& cut : set )
@@ -297,17 +303,22 @@ std::tuple<graph, std::vector<std::pair<node<Ntk>, uint32_t>>> network_cuts_grap
       if ( ( *cut )->data.gain < ( allow_zero_gain ? 0 : 1 ) )
         continue;
 
-      cut_view<Ntk> dcut( ntk, std::vector<node<Ntk>>( cut->begin(), cut->end() ), n );
+      std::vector<node<Ntk>> leaves;
+      for ( auto leaf_index : *cut )
+      {
+        leaves.push_back( ntk.index_to_node( leaf_index ) );
+      }
+      cut_view<Ntk> dcut( ntk, leaves, n );
       dcut.foreach_gate( [&]( auto const& n2 ) {
         //if ( dcut.is_constant( n2 ) || dcut.is_pi( n2 ) )
         //  return;
-        conflicts[n2].emplace_back( n, cctr );
+        conflicts[ntk.node_to_index( n2 )].emplace_back( n, cctr );
       } );
 
       auto v = g.add_vertex( ( *cut )->data.gain );
       assert( v == vertex_to_cut_addr.size() );
       vertex_to_cut_addr.emplace_back( n, cctr );
-      cut_addr_to_vertex[n].emplace_back( v );
+      cut_addr_to_vertex[ntk.node_to_index( n )].emplace_back( v );
 
       ++cctr;
     }
@@ -322,9 +333,9 @@ std::tuple<graph, std::vector<std::pair<node<Ntk>, uint32_t>>> network_cuts_grap
         const auto [n1, c1] = conflicts[n][i];
         const auto [n2, c2] = conflicts[n][j];
 
-        if ( cut_addr_to_vertex[n1][c1] != cut_addr_to_vertex[n2][c2] )
+        if ( cut_addr_to_vertex[ntk.node_to_index( n1 )][c1] != cut_addr_to_vertex[ntk.node_to_index( n2 )][c2] )
         {
-          g.add_edge( cut_addr_to_vertex[n1][c1], cut_addr_to_vertex[n2][c2] );
+          g.add_edge( cut_addr_to_vertex[ntk.node_to_index( n1 )][c1], cut_addr_to_vertex[ntk.node_to_index( n2 )][c2] );
         }
       }
     }
@@ -358,6 +369,8 @@ struct unit_cost
 {
   uint32_t operator()( Ntk const& ntk, node<Ntk> const& node ) const
   {
+    (void)ntk;
+    (void)node;
     return 1u;
   }
 };
@@ -391,10 +404,11 @@ public:
 
     /* iterate over all original nodes in the network */
     const auto size = ntk.size();
-    progress_bar pbar{ntk.size(), "cut_rewriting |{0}| node = {1:>4}@{2:>2} / " + std::to_string( size ), ps.progress};
-    ntk.foreach_node( [&]( auto const& n ) {
+    auto max_total_gain = 0u;
+    progress_bar pbar{ntk.size(), "cut_rewriting |{0}| node = {1:>4}@{2:>2} / " + std::to_string( size ) + "   comm. gain = {3}", ps.progress};
+    ntk.foreach_node( [&]( auto const& n, auto index ) {
       /* stop once all original nodes were visited */
-      if ( n >= size )
+      if ( index >= size )
         return false;
 
       /* do not iterate over constants or PIs */
@@ -406,16 +420,16 @@ public:
         return true;
 
       /* foreach cut */
-      for ( auto& cut : cuts.cuts( n ) )
+      for ( auto& cut : cuts.cuts( ntk.node_to_index( n ) ) )
       {
         /* skip trivial cuts */
-        if ( cut->size() < 2 )
+        if ( cut->size() <= 2 )
           continue;
 
         const auto tt = cuts.truth_table( *cut );
         assert( cut->size() == static_cast<unsigned>( tt.num_vars() ) );
 
-        pbar( n, n, best_replacements[n].size() );
+        pbar( index, ntk.node_to_index( n ), best_replacements[n].size(), max_total_gain );
 
         std::vector<signal<Ntk>> children;
         for ( auto l : *cut )
@@ -426,15 +440,26 @@ public:
         int32_t value = recursive_deref( n );
         {
           stopwatch t( st.time_rewriting );
+          int32_t best_gain{-1};
 
           const auto on_signal = [&]( auto const& f_new ) {
-            int32_t gain = value - recursive_ref( ntk.get_node( f_new ) );
+            auto [v, contains] = recursive_ref_contains( ntk.get_node( f_new ), n );
             recursive_deref( ntk.get_node( f_new ) );
 
-            ( *cut )->data.gain = gain;
+            int32_t gain = contains ? -1 : value - v;
+
             if ( gain > 0 || ( ps.allow_zero_gain && gain == 0 ) )
             {
-              best_replacements[n].push_back( f_new );
+              if ( best_gain == -1 )
+              {
+                ( *cut )->data.gain = best_gain = gain;
+                best_replacements[n].push_back( f_new );
+              }
+              else if ( gain > best_gain )
+              {
+                ( *cut )->data.gain = best_gain = gain;
+                best_replacements[n].back() = f_new;
+              }
             }
 
             return true;
@@ -460,6 +485,11 @@ public:
           {
             rewriting_fn( ntk, cuts.truth_table( *cut ), children.begin(), children.end(), on_signal );
           }
+
+          if ( best_gain > 0 )
+          {
+            max_total_gain += best_gain;
+          }
         }
 
         recursive_ref( n );
@@ -470,11 +500,16 @@ public:
 
     stopwatch t2( st.time_mis );
     auto [g, map] = network_cuts_graph( ntk, cuts, ps.allow_zero_gain );
-    const auto is = maximum_weighted_independent_set_gwmin( g );
 
     if ( ps.very_verbose )
     {
       std::cout << "[i] replacement dependency graph has " << g.num_vertices() << " vertices and " << g.num_edges() << " edges\n";
+    }
+
+    const auto is = ( ps.candidate_selection_strategy == cut_rewriting_params::minimize_weight ) ? maximum_weighted_independent_set_gwmin( g ) : maximal_weighted_independent_set( g );
+
+    if ( ps.very_verbose )
+    {
       std::cout << "[i] size of independent set is " << is.size() << "\n";
     }
 
@@ -485,7 +520,7 @@ public:
 
       if ( ps.very_verbose )
       {
-        std::cout << "[i] try to rewrite cut #" << v_cut << " in node #" << v_node << "\n";
+        std::cout << "[i] try to rewrite cut #" << v_cut << " in node #" << ntk.node_to_index( v_node ) << "\n";
       }
 
       if ( best_replacements[v_node].empty() )
@@ -493,12 +528,12 @@ public:
 
       const auto replacement = best_replacements[v_node][v_cut];
 
-      if ( ntk.node_to_index( ntk.is_constant( ntk.get_node( replacement ) ) ) || v_node == ntk.get_node( replacement ) )
+      if ( ntk.is_constant( ntk.get_node( replacement ) ) || v_node == ntk.get_node( replacement ) )
         continue;
 
       if ( ps.very_verbose )
       {
-        std::cout << "[i] optimize cut #" << v_cut << " in node #" << v_node << " and replace with node " << ntk.get_node( replacement ) << "\n";
+        std::cout << "[i] optimize cut #" << v_cut << " in node #" << ntk.node_to_index( v_node ) << " and replace with node " << ntk.node_to_index( ntk.get_node( replacement ) ) << "\n";
       }
 
       ntk.substitute_node( v_node, replacement );
@@ -513,7 +548,7 @@ private:
       return 0;
 
     /* recursively collect nodes */
-    uint32_t value{cost_fn(ntk, n)};
+    uint32_t value{cost_fn( ntk, n )};
     ntk.foreach_fanin( n, [&]( auto const& s ) {
       if ( ntk.decr_value( ntk.get_node( s ) ) == 0 )
       {
@@ -530,7 +565,7 @@ private:
       return 0;
 
     /* recursively collect nodes */
-    uint32_t value{cost_fn(ntk, n)};
+    uint32_t value{cost_fn( ntk, n )};
     ntk.foreach_fanin( n, [&]( auto const& s ) {
       if ( ntk.incr_value( ntk.get_node( s ) ) == 0 )
       {
@@ -538,6 +573,27 @@ private:
       }
     } );
     return value;
+  }
+
+  std::pair<int32_t, bool> recursive_ref_contains( node<Ntk> const& n, node<Ntk> const& repl )
+  {
+    /* terminate? */
+    if ( ntk.is_constant( n ) || ntk.is_pi( n ) )
+      return {0, false};
+
+    /* recursively collect nodes */
+    int32_t value = cost_fn( ntk, n );
+    bool contains = ( n == repl );
+    ntk.foreach_fanin( n, [&]( auto const& s ) {
+      contains = contains || ( ntk.get_node( s ) == repl );
+      if ( ntk.incr_value( ntk.get_node( s ) ) == 0 )
+      {
+        const auto [v, c] = recursive_ref_contains( ntk.get_node( s ), repl );
+        value += v;
+        contains = contains || c;
+      }
+    } );
+    return {value, contains};
   }
 
 private:

@@ -33,6 +33,8 @@
 #pragma once
 
 #include <memory>
+#include <optional>
+#include <stack>
 #include <string>
 
 #include <ez/direct_iterator.hpp>
@@ -40,7 +42,9 @@
 #include <kitty/operators.hpp>
 
 #include "../traits.hpp"
+#include "../utils/algorithm.hpp"
 #include "detail/foreach.hpp"
+#include "events.hpp"
 #include "storage.hpp"
 
 namespace mockturtle
@@ -66,6 +70,7 @@ struct xag_storage_data
   uint32_t num_pis = 0u;
   uint32_t num_pos = 0u;
   std::vector<int8_t> latches;
+  uint32_t trav_id = 0;
 };
 
 /*! \brief XAG storage container
@@ -74,7 +79,7 @@ struct xag_storage_data
   store a complemented attribute.  Every node has 64-bit of additional data
   used for the following purposes:
 
-  `data[0].h1`: Fan-out size
+  `data[0].h1`: Fan-out size (we use MSB to indicate whether a node is dead)
   `data[0].h2`: Application-specific value
   `data[1].h1`: Visited flag
 */
@@ -89,6 +94,7 @@ public:
   static constexpr auto min_fanin_size = 2u;
   static constexpr auto max_fanin_size = 2u;
 
+  using base_type = xag_network;
   using storage = std::shared_ptr<xag_storage>;
   using node = uint64_t;
 
@@ -161,11 +167,15 @@ public:
     }
   };
 
-  xag_network() : _storage( std::make_shared<xag_storage>() )
+  xag_network()
+      : _storage( std::make_shared<xag_storage>() ),
+        _events( std::make_shared<decltype( _events )::element_type>() )
   {
   }
 
-  xag_network( std::shared_ptr<xag_storage> storage ) : _storage( storage )
+  xag_network( std::shared_ptr<xag_storage> storage )
+      : _storage( storage ),
+        _events( std::make_shared<decltype( _events )::element_type>() )
   {
   }
 #pragma endregion
@@ -277,16 +287,6 @@ public:
 #pragma region Create binary functions
   signal _create_node( signal a, signal b )
   {
-    /* trivial cases */
-    if ( a.index == b.index )
-    {
-      return ( a.complement == b.complement ) ? a : get_constant( false );
-    }
-    else if ( a.index == 0 )
-    {
-      return a.complement ? b : get_constant( false );
-    }
-
     storage::element_type::node_type node;
     node.children[0] = a;
     node.children[1] = b;
@@ -314,6 +314,11 @@ public:
     _storage->nodes[a.index].data[0].h1++;
     _storage->nodes[b.index].data[0].h1++;
 
+    for ( auto const& fn : _events->on_add )
+    {
+      fn( index );
+    }
+
     return {index, 0};
   }
 
@@ -323,6 +328,14 @@ public:
     if ( a.index > b.index )
     {
       std::swap( a, b );
+    }
+    if ( a.index == b.index )
+    {
+      return a.complement == b.complement ? a : get_constant( false );
+    }
+    else if ( a.index == 0 )
+    {
+      return a.complement == false ? get_constant( false ) : b;
     }
     return _create_node( a, b );
   }
@@ -349,22 +362,20 @@ public:
     {
       std::swap( a, b );
     }
-    if ( ( a.complement ) && ( b.complement ) )
+
+    bool f_compl = a.complement != b.complement;
+    a.complement = b.complement = false;
+
+    if ( a.index == b.index )
     {
-      return _create_node( a, b );
+      return get_constant( f_compl );
     }
-    else if ( a.complement )
+    else if ( b.index == 0 )
     {
-      return !_create_node( !a, b );
+      return a ^ f_compl;
     }
-    else if ( b.complement )
-    {
-      return !_create_node( a, !b );
-    }
-    else
-    {
-      return _create_node( a, b );
-    }
+
+    return _create_node( a, b ) ^ f_compl;
   }
 
   signal create_xnor( signal const& a, signal const& b )
@@ -399,7 +410,23 @@ public:
     auto c3 = create_and( c1, c2 );
     return create_xor( a, c3 );
   }
+#pragma endregion
 
+#pragma region Create nary functions
+  signal create_nary_and( std::vector<signal> const& fs )
+  {
+    return tree_reduce( fs.begin(), fs.end(), get_constant( true ), [this]( auto const& a, auto const& b ) { return create_and( a, b ); } );
+  }
+
+  signal create_nary_or( std::vector<signal> const& fs )
+  {
+    return tree_reduce( fs.begin(), fs.end(), get_constant( false ), [this]( auto const& a, auto const& b ) { return create_or( a, b ); } );
+  }
+
+  signal create_nary_xor( std::vector<signal> const& fs )
+  {
+    return tree_reduce( fs.begin(), fs.end(), get_constant( false ), [this]( auto const& a, auto const& b ) { return create_xor( a, b ); } );
+  }
 #pragma endregion
 
 #pragma region Create arbitrary functions
@@ -408,7 +435,8 @@ public:
     (void)other;
     (void)source;
     assert( children.size() == 2u );
-    if ( children[0u].index < children[1u].index )
+    if ( other.is_and( source ) )
+      //if ( children[0u].index < children[1u].index )
       return create_and( children[0u], children[1u] );
     else
       return create_xor( children[0u], children[1u] );
@@ -416,25 +444,97 @@ public:
 #pragma endregion
 
 #pragma region Restructuring
-  void substitute_node( node const& old_node, signal const& new_signal )
+  std::optional<std::pair<node, signal>> replace_in_node( node const& n, node const& old_node, signal new_signal )
   {
-    /* find all parents from old_node */
-    for ( auto& n : _storage->nodes )
-    {
-      for ( auto& child : n.children )
-      {
-        if ( child.index == old_node )
-        {
-          child.index = new_signal.index;
-          child.weight ^= new_signal.complement;
+    auto& node = _storage->nodes[n];
 
-          // increment fan-in of new node
-          _storage->nodes[new_signal.index].data[0].h1++;
-        }
+    uint32_t fanin = 0u;
+    if ( node.children[0].index == old_node )
+    {
+      fanin = 0u;
+      new_signal.complement ^= node.children[0].weight;
+    }
+    else if ( node.children[1].index == old_node )
+    {
+      fanin = 1u;
+      new_signal.complement ^= node.children[1].weight;
+    }
+    else
+    {
+      return std::nullopt;
+    }
+
+    // determine gate type of n
+    auto _is_and = node.children[0].index < node.children[1].index;
+
+    // determine potential new children of node n
+    signal child1 = new_signal;
+    signal child0 = node.children[fanin ^ 1];
+
+    if ( ( _is_and && child0.index > child1.index ) || ( !_is_and && child0.index < child1.index ) )
+    {
+      std::swap( child0, child1 );
+    }
+
+    // check for trivial cases?
+    if ( child0.index == child1.index )
+    {
+      const auto diff_pol = child0.complement != child1.complement;
+      if ( _is_and )
+      {
+        return std::make_pair( n, diff_pol ? get_constant( false ) : child1 );
+      }
+      else
+      {
+        return std::make_pair( n, get_constant( diff_pol ) );
+      }
+    }
+    else if ( child0.index == 0 ) /* constant child */
+    {
+      if ( _is_and )
+      {
+        return std::make_pair( n, child0.complement ? child1 : get_constant( false ) );
+      }
+      else
+      {
+        return std::make_pair( n, child1 ^ child0.complement );
       }
     }
 
-    /* check outputs */
+    // node already in hash table
+    storage::element_type::node_type _hash_obj;
+    _hash_obj.children[0] = child0;
+    _hash_obj.children[1] = child1;
+    if ( const auto it = _storage->hash.find( _hash_obj ); it != _storage->hash.end() )
+    {
+      return std::make_pair( n, signal( it->second, 0 ) );
+    }
+
+    // remember before
+    const auto old_child0 = signal{node.children[0]};
+    const auto old_child1 = signal{node.children[1]};
+
+    // erase old node in hash table
+    _storage->hash.erase( node );
+
+    // insert updated node into hash table
+    node.children[0] = child0;
+    node.children[1] = child1;
+    _storage->hash[node] = n;
+
+    // update the reference counter of the new signal
+    _storage->nodes[new_signal.index].data[0].h1++;
+
+    for ( auto const& fn : _events->on_modified )
+    {
+      fn( n, {old_child0, old_child1} );
+    }
+
+    return std::nullopt;
+  }
+
+  void replace_in_outputs( node const& old_node, signal const& new_signal )
+  {
     for ( auto& output : _storage->outputs )
     {
       if ( output.index == old_node )
@@ -446,14 +546,74 @@ public:
         _storage->nodes[new_signal.index].data[0].h1++;
       }
     }
+  }
 
-    // reset fan-in of old node
-    _storage->nodes[old_node].data[0].h1 = 0;
+  void take_out_node( node const& n )
+  {
+    /* we cannot delete PIs or constants */
+    if ( n == 0 || is_pi( n ) )
+      return;
+
+    auto& nobj = _storage->nodes[n];
+    nobj.data[0].h1 = UINT32_C( 0x80000000 ); /* fanout size 0, but dead */
+    _storage->hash.erase( nobj );
+
+    for ( auto const& fn : _events->on_delete )
+    {
+      fn( n );
+    }
+
+    for ( auto i = 0u; i < 2u; ++i )
+    {
+      if ( fanout_size( nobj.children[i].index ) == 0 )
+      {
+        continue;
+      }
+      if ( decr_fanout_size( nobj.children[i].index ) == 0 )
+      {
+        take_out_node( nobj.children[i].index );
+      }
+    }
+  }
+
+  inline bool is_dead( node const& n ) const
+  {
+    return ( _storage->nodes[n].data[0].h1 >> 31 ) & 1;
+  }
+
+  void substitute_node( node const& old_node, signal const& new_signal )
+  {
+    std::stack<std::pair<node, signal>> to_substitute;
+    to_substitute.push( {old_node, new_signal} );
+
+    while ( !to_substitute.empty() )
+    {
+      const auto [_old, _new] = to_substitute.top();
+      to_substitute.pop();
+
+      for ( auto idx = 1u; idx < _storage->nodes.size(); ++idx )
+      {
+        if ( is_pi( idx ) )
+          continue; /* ignore PIs */
+
+        if ( const auto repl = replace_in_node( idx, _old, _new ); repl )
+        {
+          to_substitute.push( *repl );
+        }
+      }
+
+      /* check outputs */
+      replace_in_outputs( _old, _new );
+
+      // reset fan-in of old node
+      take_out_node( _old );
+    }
   }
 #pragma endregion
 
 #pragma region Structural properties
-  auto size() const
+  auto
+  size() const
   {
     return static_cast<uint32_t>( _storage->nodes.size() );
   }
@@ -486,7 +646,7 @@ public:
 
   auto num_gates() const
   {
-    return static_cast<uint32_t>( _storage->nodes.size() - _storage->inputs.size() - 1 );
+    return static_cast<uint32_t>( _storage->hash.size() );
   }
 
   uint32_t fanin_size( node const& n ) const
@@ -498,7 +658,17 @@ public:
 
   uint32_t fanout_size( node const& n ) const
   {
-    return _storage->nodes[n].data[0].h1;
+    return _storage->nodes[n].data[0].h1 & UINT32_C( 0x7FFFFFFF );
+  }
+
+  uint32_t incr_fanout_size( node const& n ) const
+  {
+    return _storage->nodes[n].data[0].h1++ & UINT32_C( 0x7FFFFFFF );
+  }
+
+  uint32_t decr_fanout_size( node const& n ) const
+  {
+    return --_storage->nodes[n].data[0].h1 & UINT32_C( 0x7FFFFFFF );
   }
 
   bool is_and( node const& n ) const
@@ -690,9 +860,10 @@ public:
   template<typename Fn>
   void foreach_node( Fn&& fn ) const
   {
-    detail::foreach_element( ez::make_direct_iterator<uint64_t>( 0 ),
-                             ez::make_direct_iterator<uint64_t>( _storage->nodes.size() ),
-                             fn );
+    detail::foreach_element_if( ez::make_direct_iterator<uint64_t>( 0 ),
+                                ez::make_direct_iterator<uint64_t>( _storage->nodes.size() ),
+                                [this]( auto n ) { return !is_dead( n ); },
+                                fn );
   }
 
   template<typename Fn>
@@ -781,7 +952,7 @@ public:
   {
     detail::foreach_element_if( ez::make_direct_iterator<uint64_t>( 1 ), /* start from 1 to avoid constant */
                                 ez::make_direct_iterator<uint64_t>( _storage->nodes.size() ),
-                                [this]( auto n ) { return !is_pi( n ); },
+                                [this]( auto n ) { return !is_pi( n ) && !is_dead( n ); },
                                 fn );
   }
 
@@ -914,16 +1085,28 @@ public:
   {
     _storage->nodes[n].data[1].h1 = v;
   }
+
+  uint32_t trav_id() const
+  {
+    return _storage->data.trav_id;
+  }
+
+  void incr_trav_id() const
+  {
+    ++_storage->data.trav_id;
+  }
 #pragma endregion
 
 #pragma region General methods
-  void update()
+  auto& events() const
   {
+    return *_events;
   }
 #pragma endregion
 
 public:
   std::shared_ptr<xag_storage> _storage;
+  std::shared_ptr<network_events<base_type>> _events;
 };
 
 } // namespace mockturtle
