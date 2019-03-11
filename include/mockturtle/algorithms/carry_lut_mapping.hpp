@@ -125,7 +125,16 @@ public:
     //std::cout << "Mapping to LUTs before carry nodes.\n";
     compute_carry_mapping();
 
-    //
+    // TODO: still needs to figure out if LUT nodes are used elsewhere
+    // it currently only checks if its used in another carry node
+    for ( auto const& n : top_order ) {
+      if (!is_a_carry_node(n)) {
+        ntk.foreach_fanin(n, [&](auto const& c) {
+          auto index = ntk.node_to_index(ntk.get_node(c));
+          carry_lut_nodes[index]--; 
+        });
+      }
+    }
     for (int i = 0; i < carry_lut_nodes.size(); i++) {
       std::cout << carry_lut_nodes[i] << " ";
     }
@@ -148,8 +157,9 @@ public:
 
     print_state();
     std::cout << "Mapping derivation starts.\n";
-    derive_mapping();
     
+    // TODO: mapping derivation needs to account for carry
+    derive_mapping();
   }
 
 private:
