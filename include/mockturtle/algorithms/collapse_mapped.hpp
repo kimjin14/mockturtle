@@ -34,6 +34,7 @@
 
 #include <optional>
 #include <unordered_map>
+#include <iostream>
 
 #include "../traits.hpp"
 #include "../utils/node_map.hpp"
@@ -158,7 +159,7 @@ public:
     /* nodes */
     topo_view topo{ntk};
     topo.foreach_node( [&]( auto n ) {
-      if ( ntk.is_constant( n ) || ntk.is_pi( n ) || !ntk.is_cell_root( n ) )
+      if ( ntk.is_constant( n ) || ntk.is_pi( n ) || !ntk.is_cell_root( n ))
         return;
 
       std::vector<signal<NtkDest>> children;
@@ -182,6 +183,15 @@ public:
         node_to_signal[n] = dest.create_node( children, ntk.cell_function( n ) );
         opposites[n] = dest.create_node( children, ~ntk.cell_function( n ) );
         break;
+      }
+
+      if (ntk.is_carry(n)) {
+        //std::cout << "\t\tThis one is a carry, making it into output ";
+        ntk.foreach_cell_fanin(n,[&](auto fanin) {
+          //std::cout << fanin << " ";
+        });
+        dest.create_po( node_to_signal[n] );
+        //std::cout << "\n";
       }
     } );
 

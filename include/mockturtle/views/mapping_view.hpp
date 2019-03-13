@@ -34,6 +34,7 @@
 
 #include <memory>
 #include <vector>
+#include <iomanip>
 
 #include "../networks/detail/foreach.hpp"
 #include "../traits.hpp"
@@ -147,6 +148,7 @@ public:
     static_assert( has_node_to_index_v<Ntk>, "Ntk does not implement the node_to_index method" );
 
     _mapping_storage->mappings.resize( ntk.size(), 0 );
+    _mapping_storage->carry_mappings.resize( ntk.size(), 0 );
 
     if constexpr ( StoreFunction )
     {
@@ -180,30 +182,27 @@ public:
     return _mapping_storage->mapping_size;
   }
 
+  bool is_carry( node const& n) const {
+    if (_mapping_storage->carry_mappings[this->node_to_index(n)] != 0) {
+      return true;
+    } else { return false; }
+
+  }
+
   void add_to_carry_mapping( node const& n, uint32_t carry_index )
   {
-    auto& cmindex = _mapping_storage.carry_mappings[this->node_to_index( n )];
-    for (int i = 0; i < _mapping_storage.carry_mappings.size(); i++)
-      std::cout << _mapping_storage.carry_mappings[i] << ",";
-    std::cout << "\n";
 
-    // when adding to the carry, it should be only mapped once.
-    assert (cmindex != 0);
+    assert (this->node_to_index( n ) < _mapping_storage->carry_mappings.size());
+    assert (_mapping_storage->carry_mappings[this->node_to_index( n )] == 0);
 
-
-    //  somehow update how many carry paths have been mapped
-    // or shoudl it be how many MIG nodes has been mapped? not sure yet
-    if ( carry_index > cmindex )
-    {
-      _mapping_storage.carry_mapping_size = carry_index;
-    }
-
-    _mapping_storage.carry_mappings[this->node_to_index( n )] = carry_index;
+    // carry node index
+    _mapping_storage->carry_mappings[this->node_to_index( n )] = carry_index;
   }
 
   template<typename LeavesIterator>
   void add_to_mapping( node const& n, LeavesIterator begin, LeavesIterator end )
   {
+
     auto& mindex = _mapping_storage->mappings[this->node_to_index( n )];
 
     /* increase mapping size? */
@@ -223,10 +222,13 @@ public:
     {
       _mapping_storage->mappings.push_back( this->node_to_index( *begin++ ) );
     }
-
-    for (auto mapping : _mapping_storage.mappings) 
-      std::cout << mapping << ",";
-    std::cout << "\n";
+    /*int i=0;
+    for (auto mapping : _mapping_storage->mappings) { 
+      std::cout << std::setw(2) << mapping << ",";
+      i++;
+      if (i%30==0) std::cout << "\n";
+    }
+    std::cout << "\n";*/
   }
 
   void remove_from_mapping( node const& n )

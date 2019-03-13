@@ -112,33 +112,34 @@ public:
     } );
 
     init_nodes();
-    init_carry_nodes();
     //print_state();
 
     // Currently only finding one longest path (max of 30 nodes).
     // Using critical_path vector
-    //std::cout << "Finding paths for mapping.\n";
-    find_critical_paths();
+    //std::cout << "Finding paths and mapping carry.\n";
+    //find_critical_paths();
+    //init_carry_nodes();
 
     // Map pre carry logic to LUTs
     // Using carry_lut_nodes vector 
     //std::cout << "Mapping to LUTs before carry nodes.\n";
-    compute_carry_mapping();
+    //compute_carry_mapping();
 
     // TODO: still needs to figure out if LUT nodes are used elsewhere
     // it currently only checks if its used in another carry node
-    for ( auto const& n : top_order ) {
-      if (!is_a_carry_node(n)) {
-        ntk.foreach_fanin(n, [&](auto const& c) {
-          auto index = ntk.node_to_index(ntk.get_node(c));
-          carry_lut_nodes[index]--; 
-        });
-      }
-    }
-    for (int i = 0; i < carry_lut_nodes.size(); i++) {
+    // This may work... still need to verify
+    //for ( auto const& n : top_order ) {
+    //  if (!is_a_carry_node(n)) {
+    //    ntk.foreach_fanin(n, [&](auto const& c) {
+    //      auto index = ntk.node_to_index(ntk.get_node(c));
+    //      carry_lut_nodes[index]--; 
+    //    });
+    //  }
+    //}
+    /*for (int i = 0; i < carry_lut_nodes.size(); i++) {
       std::cout << carry_lut_nodes[i] << " ";
     }
-    std::cout << "\n";
+    std::cout << "\n";*/
 
     std::cout << "LUT mapping starts.\n";
     set_mapping_refs<false>();
@@ -146,16 +147,13 @@ public:
     while ( iteration < ps.rounds )
     {
       compute_mapping<false>();
-      //print_state();
     }
 
     while ( iteration < ps.rounds + ps.rounds_ela )
     {
       compute_mapping<true>();
-      //print_state();
     }
 
-    print_state();
     std::cout << "Mapping derivation starts.\n";
     
     // TODO: mapping derivation needs to account for carry
@@ -171,7 +169,7 @@ private:
   bool get_path(node<Ntk> n, uint32_t depth, uint32_t curr_depth) {
 
     if ( ntk.is_constant( n ) || ntk.is_pi( n ) ) {
-      if (curr_depth == depth || curr_depth == 30) {
+      if (curr_depth == depth || curr_depth == 40) {
         carry_nodes.push_back(n);
         return true;
       } else return false;
@@ -223,11 +221,13 @@ private:
       delays[index] = cuts.cuts( index )[0]->data.delay;
     } );
   }
-
   void init_carry_nodes() {
-    //for (auto n: carry_lut_nodes) {
-    //  n = 0;
-    //} 
+    for (auto n_carry: carry_nodes) {
+      if (!ntk.is_constant(n_carry) && !ntk.is_pi(n_carry)) {
+        const auto index = ntk.node_to_index( n_carry );
+        delays[index] = 0;
+      }
+    }
   }
 
   // Decide which nodes can fit into LUT
@@ -463,8 +463,6 @@ private:
   // children can fit into the LUTs preceding FA
   int check_child_node (uint32_t index1, uint32_t index2, uint32_t carryin) {
 
-    int n_mapped = 0;
-
     // Array holding the nodes to the halfs of ALM as separate 4-LUT
     uint32_t index1_inputs[2][5]; 
     uint32_t index2_inputs[2][5]; 
@@ -630,7 +628,6 @@ private:
           //carry_lut_nodes.push_back(index2_child[i]); 
         }
       }
-      //n_mapped = 2;
       return 2;
     }
     std::cout << "Nothing fits\n";
@@ -845,21 +842,9 @@ private:
   void compute_best_cut_carry( uint32_t index1, uint32_t index2, \
       uint32_t index_carryin, uint32_t* n_special_map)
   {
-    //constexpr auto mf_eps{0.005f};
-
-    /*float flow;
-    uint32_t time{0};
-    int32_t best_cut1{-1};
-    int32_t best_cut2{-1};
-    float best_flow{std::numeric_limits<float>::max()};
-    uint32_t best_time{std::numeric_limits<uint32_t>::max()};
-    int32_t cut_index1{-1};
-    int32_t cut_index2{-1};
-*/
     uint32_t n_mapped = check_child_node(index1, index2, index_carryin);
     *n_special_map += n_mapped;
     return;
-
   }
 
 
@@ -931,20 +916,49 @@ private:
     }
   }
 
+  // Add to carry mapping, which tells the mapping view that this node is in carry
+  // Add to regular mapping with inputs correctly representing either
+  //    mapped child node inputs, itself (just a wire) 
   void map_paths_to_carry_chain()
   {
 
-    for (auto const n: carry_nodes)
-    {
+    for (auto const n: carry_nodes){
+      if ( ntk.is_constant( n ) || ntk.is_pi( n )) 
+        continue;
+      //std::cout << "\tCarry Mapping " << n << "\n";
+
+      
       std::vector<node<Ntk>> nodes;
 
+      //std::cout << "\t\tAdding: ";
       for (uint32_t c = 0; c < ntk.fanin_size(n); c++)
       {
         auto nchild = ntk.get_children(n,c);
-        nodes.push_back(nchild);
+        //std::cout << nchild << "-> ";
+        if (ntk.is_pi(nchild) ){
+          nodes.push_back(nchild);
+          //std::cout << nchild << " ";
+        } else if (is_a_carry_node(nchild)) {
+          continue;
+        } else if (is_in_carry_lut(nchild)) { 
+          //std::cout << "in carry lut " ;
+          for (uint32_t i = 0; i < ntk.fanin_size(nchild); i++) {
+            auto nchildinput = ntk.get_children(nchild,i);
+            nodes.push_back(nchildinput); 
+            //std::cout << nchildinput << " ";
+          }
+        } else {
+          nodes.push_back(nchild);
+          //std::cout << nchild << " ";
+        }
       }
 
-      ntk.add_to_mapping (n, nodes.begin(), nodes.end()); 
+     //std::cout << "\n"; 
+
+      //ntk.add_to_mapping (n, nodes.begin(), nodes.end()); 
+      // 1 is for which carry chain this belongs to. For now, just 1
+      ntk.add_to_mapping( n, nodes.begin(), nodes.end() );
+      ntk.add_to_carry_mapping (n, 1); 
     }
     /*for (auto const n: carry_lut_nodes)
     {
@@ -974,10 +988,14 @@ private:
         continue;
 
       const auto index = ntk.node_to_index( n );
+
+      if (is_a_carry_node(n))
+        assert(map_refs[index] == 0);
+
       if ( map_refs[index] == 0 )
         continue;
 
-      std::cout << "here " << n << "\n";
+      //std::cout << "\tRegular Mapping " << n << "\n";
       std::vector<node<Ntk>> nodes;
       for ( auto const& l : cuts.cuts( index ).best() )
       {
