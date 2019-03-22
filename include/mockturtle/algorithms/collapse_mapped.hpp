@@ -191,7 +191,7 @@ public:
           //std::cout << fanin << " ";
         });
         dest.create_po( node_to_signal[n] );
-        //std::cout << "\n";
+        std::cout << "\n";
       }
     } );
 

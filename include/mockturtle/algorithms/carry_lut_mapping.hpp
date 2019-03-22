@@ -1,5 +1,9 @@
 /*
   carry_lut_mapping.hpp
+
+  MIG nodes annotated on "value" (data[0].h2)
+    if value is 1, mapped to carry
+    if value is 2, mapped to LUT before carry     
 */
 
 #pragma once
@@ -112,6 +116,28 @@ public:
     } );
 
     init_nodes();
+
+/*
+    int count_total_node = 0;
+    int count_aig_node = 0;
+    int count_mig_node = 0;
+
+    ntk.foreach_node ([&](auto n) {
+      if (ntk.is_pi(n) || ntk.is_constant(n)) return;
+
+      count_total_node++;
+      bool mig = true;
+      ntk.foreach_fanin(n, [&](auto c) {
+         if (ntk.is_constant(ntk.get_node(c))) mig = false;
+      });
+
+      if (mig) count_mig_node++;
+      else count_aig_node++;
+
+    });
+
+    std::cout << count_total_node << "," << count_aig_node << ","<< count_mig_node << "\n";
+*/
     //print_state();
 
     // Currently only finding one longest path (max of 30 nodes).
@@ -141,7 +167,7 @@ public:
     }
     std::cout << "\n";*/
 
-    std::cout << "LUT mapping starts.\n";
+    //std::cout << "LUT mapping starts.\n";
     set_mapping_refs<false>();
 
     while ( iteration < ps.rounds )
@@ -154,7 +180,7 @@ public:
       compute_mapping<true>();
     }
 
-    std::cout << "Mapping derivation starts.\n";
+    //std::cout << "Mapping derivation starts.\n";
     
     // TODO: mapping derivation needs to account for carry
     derive_mapping();
@@ -976,6 +1002,55 @@ private:
     }*/
   }
 
+
+  // Recursively look at the tree
+  // Check, is the node one of the cut?
+  //    then end there
+  void find_num_nodes(node<Ntk> n, cut_t const& bestcut, uint32_t* num_nodes,
+      uint32_t depth, uint32_t* max_depth, bool printtt) {
+    ntk.set_visited(n,1);
+    for (uint32_t i = 0; i < ntk.fanin_size(n); i++) {
+      bool found = false;
+      auto c = ntk.get_children(n,i);
+      //if (printtt)
+      //std::cout << n << " -> " << c << "\n";
+      for ( auto const& l : bestcut ) {
+        if (l == ntk.node_to_index(c)) {
+          if (*max_depth < depth)
+            *max_depth = depth;
+          found = true;
+        } 
+      } 
+      if (!found && !ntk.is_pi(c) && !ntk.is_constant(c) && !(ntk.visited(c)>0)) {
+        //if (printtt)
+        //std::cout << "\tn " << n << " c " << c << "\n";
+        //if (printtt)
+        //std::cout << c << ",";
+        (*num_nodes)++;
+        find_num_nodes(c, bestcut, num_nodes, depth+1, max_depth, printtt);
+      }
+    }
+  }
+
+  // n - node you are currently investigating
+  // index - index of one of the cut I'm looking at 
+  /*void find_depth(node<Ntk> n, uint32_t index, uint32_t depth, \
+      uint32_t* max_depth, uint32_t* num_nodes) {
+    for (uint32_t i = 0; i < ntk.fanin_size(n); i++) {
+      auto c = ntk.get_children(n,i);
+      if (index==ntk.node_to_index(c)) {
+        if (*max_depth < depth) 
+          *max_depth = depth;
+        //std::cout << "\t" << index << "\n";
+      } else {
+        //(*num_nodes)++;
+        //std::cout << "\t" << index << " "<< ntk.node_to_index(c) << "\n";
+        find_depth(c, index, depth+1, max_depth, num_nodes);
+      }
+    }
+  }*/
+
+
   void derive_mapping()
   {
     ntk.clear_mapping();
@@ -995,12 +1070,16 @@ private:
       if ( map_refs[index] == 0 )
         continue;
 
-      //std::cout << "\tRegular Mapping " << n << "\n";
+      std::cout << "\tRegular Mapping " << n << "\n";
       std::vector<node<Ntk>> nodes;
-      for ( auto const& l : cuts.cuts( index ).best() )
-      {
+      for ( auto const& l : cuts.cuts( index ).best() ) {
         nodes.push_back( ntk.index_to_node( l ) );
       }
+      uint32_t depth = 0;
+      uint32_t num_nodes = 1;
+      find_num_nodes (n, cuts.cuts( index ).best(), &num_nodes, 1, &depth, false);
+      ntk.clear_visited();
+      
       ntk.add_to_mapping( n, nodes.begin(), nodes.end() );
 
       if constexpr ( StoreFunction )
