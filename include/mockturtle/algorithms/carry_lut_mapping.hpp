@@ -1,9 +1,8 @@
 /*
   carry_lut_mapping.hpp
 
-  MIG nodes annotated on "value" (data[0].h2)
-    if value is 1, mapped to carry
-    if value is 2, mapped to LUT before carry     
+  separate lists for carry nodes and carry lut nodes
+  two method to check if node belongs to either carry or carry lut
 */
 
 #pragma once
@@ -50,6 +49,8 @@ struct lut_mapping_params
 
   /*! \brief Be verbose. */
   bool verbose{false};
+
+  bool carry_mapping{true};
 };
 
 /*! \brief Statistics for lut_mapping.
@@ -138,34 +139,23 @@ public:
 
     std::cout << count_total_node << "," << count_aig_node << ","<< count_mig_node << "\n";
 */
-    //print_state();
 
-    // Currently only finding one longest path (max of 30 nodes).
-    // Using critical_path vector
-    //std::cout << "Finding paths and mapping carry.\n";
-    //find_critical_paths();
-    //init_carry_nodes();
+    if (ps.carry_mapping) {
+      // Currently only finding one longest path (max of 30 nodes).
+      // Using critical_path vector
+      find_critical_paths();
+      //init_carry_nodes();
 
-    // Map pre carry logic to LUTs
-    // Using carry_lut_nodes vector 
-    //std::cout << "Mapping to LUTs before carry nodes.\n";
-    //compute_carry_mapping();
-
-    // TODO: still needs to figure out if LUT nodes are used elsewhere
-    // it currently only checks if its used in another carry node
-    // This may work... still need to verify
-    //for ( auto const& n : top_order ) {
-    //  if (!is_a_carry_node(n)) {
-    //    ntk.foreach_fanin(n, [&](auto const& c) {
-    //      auto index = ntk.node_to_index(ntk.get_node(c));
-    //      carry_lut_nodes[index]--; 
-    //    });
-    //  }
-    //}
-    /*for (int i = 0; i < carry_lut_nodes.size(); i++) {
-      std::cout << carry_lut_nodes[i] << " ";
-    }
-    std::cout << "\n";*/
+      // Map pre carry logic to LUTs
+      // Using carry_lut_nodes vector 
+      compute_carry_mapping();
+      int count = 0;
+      for (auto const& n: carry_lut_nodes) {
+        if (n > 0) std::cout << n << "(" << count << ") ";
+        count++;
+      }
+      std::cout << "\n";
+    }    
 
     //std::cout << "LUT mapping starts.\n";
     set_mapping_refs<false>();
@@ -194,7 +184,8 @@ private:
 
   bool get_path(node<Ntk> n, uint32_t depth, uint32_t curr_depth) {
 
-    if ( ntk.is_constant( n ) || ntk.is_pi( n ) ) {
+    //if ( ntk.is_constant( n ) || ntk.is_pi( n ) ) {
+    if (ntk.is_pi(n)) {
       if (curr_depth == depth || curr_depth == 40) {
         carry_nodes.push_back(n);
         return true;
@@ -254,6 +245,7 @@ private:
         delays[index] = 0;
       }
     }
+    
   }
 
   // Decide which nodes can fit into LUT
@@ -278,6 +270,19 @@ private:
         ntk.node_to_index(n_carryin), &special_map);
     }
     std::cout << "\tNumber of special mapping of nodes: " << special_map << "\n";
+
+
+    // TODO: still needs to figure out if LUT nodes are used elsewhere
+    // it currently only checks if its used in another carry node
+    // This may work... still need to verify
+    for ( auto const& n : top_order ) {
+      if (!is_a_carry_node(n)) {
+        ntk.foreach_fanin(n, [&](auto const& c) {
+          auto index = ntk.node_to_index(ntk.get_node(c));
+          carry_lut_nodes[index]--; 
+        });
+      }
+    }
   }
 
   bool is_a_carry_node(node<Ntk> n) {
@@ -322,10 +327,10 @@ private:
     delay = 0;
     ntk.foreach_po( [this]( auto s ) {
       const auto index = ntk.node_to_index( ntk.get_node( s ) );
+      // only increase the map_ref if the PO is not fed by carry chain
       if (!is_a_carry_node(ntk.get_node(s))) {
         delay = std::max( delay, delays[index] );
-        if constexpr ( !ELA )
-        {
+        if constexpr ( !ELA ) {
           map_refs[index]++;
         }
       }
@@ -336,9 +341,9 @@ private:
       if (ntk.is_pi(n)) continue;
       ntk.foreach_fanin(n, [&](auto const& c) {
         // map if not a PI, not in carry lut, and not a carry node
-        if (!ntk.is_pi(ntk.get_node(c)) && !is_in_carry_lut(ntk.get_node(c)) && !is_a_carry_node(ntk.get_node(c))) {
+        if (!ntk.is_pi(ntk.get_node(c)) && !is_in_carry_lut(ntk.get_node(c)) && \
+            !is_a_carry_node(ntk.get_node(c))) {
           const auto index = ntk.node_to_index(ntk.get_node(c));
-          //std::cout << "index of " << index << " set to map\n";
           map_refs[index]++;    
         }
       });
@@ -942,67 +947,6 @@ private:
     }
   }
 
-  // Add to carry mapping, which tells the mapping view that this node is in carry
-  // Add to regular mapping with inputs correctly representing either
-  //    mapped child node inputs, itself (just a wire) 
-  void map_paths_to_carry_chain()
-  {
-
-    for (auto const n: carry_nodes){
-      if ( ntk.is_constant( n ) || ntk.is_pi( n )) 
-        continue;
-      //std::cout << "\tCarry Mapping " << n << "\n";
-
-      
-      std::vector<node<Ntk>> nodes;
-
-      //std::cout << "\t\tAdding: ";
-      for (uint32_t c = 0; c < ntk.fanin_size(n); c++)
-      {
-        auto nchild = ntk.get_children(n,c);
-        //std::cout << nchild << "-> ";
-        if (ntk.is_pi(nchild) ){
-          nodes.push_back(nchild);
-          //std::cout << nchild << " ";
-        } else if (is_a_carry_node(nchild)) {
-          continue;
-        } else if (is_in_carry_lut(nchild)) { 
-          //std::cout << "in carry lut " ;
-          for (uint32_t i = 0; i < ntk.fanin_size(nchild); i++) {
-            auto nchildinput = ntk.get_children(nchild,i);
-            nodes.push_back(nchildinput); 
-            //std::cout << nchildinput << " ";
-          }
-        } else {
-          nodes.push_back(nchild);
-          //std::cout << nchild << " ";
-        }
-      }
-
-     //std::cout << "\n"; 
-
-      //ntk.add_to_mapping (n, nodes.begin(), nodes.end()); 
-      // 1 is for which carry chain this belongs to. For now, just 1
-      ntk.add_to_mapping( n, nodes.begin(), nodes.end() );
-      ntk.add_to_carry_mapping (n, 1); 
-    }
-    /*for (auto const n: carry_lut_nodes)
-    {
-      if (!is_in_carry_lut(n)) continue;
-      
-      std::vector<node<Ntk>> nodes;
-
-      for (uint32_t c = 0; c < ntk.fanin_size(n); c++)
-      {
-        auto nchild = ntk.get_children(n,c);
-        nodes.push_back(nchild);
-      }
-
-      ntk.add_to_mapping (n, nodes.begin(), nodes.end()); 
-    }*/
-  }
-
-
   // Recursively look at the tree
   // Check, is the node one of the cut?
   //    then end there
@@ -1012,8 +956,6 @@ private:
     for (uint32_t i = 0; i < ntk.fanin_size(n); i++) {
       bool found = false;
       auto c = ntk.get_children(n,i);
-      //if (printtt)
-      //std::cout << n << " -> " << c << "\n";
       for ( auto const& l : bestcut ) {
         if (l == ntk.node_to_index(c)) {
           if (*max_depth < depth)
@@ -1022,40 +964,55 @@ private:
         } 
       } 
       if (!found && !ntk.is_pi(c) && !ntk.is_constant(c) && !(ntk.visited(c)>0)) {
-        //if (printtt)
-        //std::cout << "\tn " << n << " c " << c << "\n";
-        //if (printtt)
-        //std::cout << c << ",";
         (*num_nodes)++;
         find_num_nodes(c, bestcut, num_nodes, depth+1, max_depth, printtt);
       }
     }
   }
 
-  // n - node you are currently investigating
-  // index - index of one of the cut I'm looking at 
-  /*void find_depth(node<Ntk> n, uint32_t index, uint32_t depth, \
-      uint32_t* max_depth, uint32_t* num_nodes) {
-    for (uint32_t i = 0; i < ntk.fanin_size(n); i++) {
-      auto c = ntk.get_children(n,i);
-      if (index==ntk.node_to_index(c)) {
-        if (*max_depth < depth) 
-          *max_depth = depth;
-        //std::cout << "\t" << index << "\n";
-      } else {
-        //(*num_nodes)++;
-        //std::cout << "\t" << index << " "<< ntk.node_to_index(c) << "\n";
-        find_depth(c, index, depth+1, max_depth, num_nodes);
-      }
-    }
-  }*/
+  // Add to carry mapping, which tells the mapping view that this node is in carry
+  // Add to regular mapping with inputs correctly representing either
+  //    mapped child node inputs, the child node 
+  void derive_carry_chain_mapping() {
+    for (auto const n: carry_nodes) {
+      if (ntk.is_constant(n) || ntk.is_pi(n)) 
+        continue;
 
+      //std::cout << "\tCarry Mapping " << n << "\n";
+      
+      std::vector<node<Ntk>> nodes;
+
+      // Check if fan-in is a lut
+      for (uint32_t c = 0; c < ntk.fanin_size(n); c++) {
+        auto nchild = ntk.get_children(n,c);
+
+        // is the input from the other carry
+        if (is_a_carry_node(nchild)) {
+          continue;
+        } else  if (ntk.is_pi(nchild) ){
+          nodes.push_back(nchild);
+        } else if (is_in_carry_lut(nchild)) { // node fits in lut before carry
+          for (uint32_t i = 0; i < ntk.fanin_size(nchild); i++) {
+            auto nchildinput = ntk.get_children(nchild,i);
+            nodes.push_back(nchildinput); 
+          }
+        } else { // just a wire
+          nodes.push_back(nchild);
+        }
+      }
+      //std::cout << "\n";
+
+      // 1 is for which carry chain this belongs to. For now, just 1
+      ntk.add_to_mapping( n, nodes.begin(), nodes.end() );
+      ntk.add_to_carry_mapping (n, 1); 
+    }
+  }
 
   void derive_mapping()
   {
     ntk.clear_mapping();
 
-    map_paths_to_carry_chain();
+    derive_carry_chain_mapping();
 
     for ( auto const& n : top_order )
     {
@@ -1064,17 +1021,18 @@ private:
 
       const auto index = ntk.node_to_index( n );
 
-      if (is_a_carry_node(n))
-        assert(map_refs[index] == 0);
-
-      if ( map_refs[index] == 0 )
+      if ( map_refs[index] == 0 ) {
+        //assert (!is_a_carry_node(n));
         continue;
+      }
 
-      std::cout << "\tRegular Mapping " << n << "\n";
+      //std::cout << "\tRegular Mapping " << n << "\n";
       std::vector<node<Ntk>> nodes;
       for ( auto const& l : cuts.cuts( index ).best() ) {
         nodes.push_back( ntk.index_to_node( l ) );
       }
+
+      // Finding the depth and number of MIG node of each mapped LUT
       uint32_t depth = 0;
       uint32_t num_nodes = 1;
       find_num_nodes (n, cuts.cuts( index ).best(), &num_nodes, 1, &depth, false);

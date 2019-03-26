@@ -57,8 +57,10 @@ struct mapping_view_storage<true>
 {
   std::vector<uint32_t> mappings;
   std::vector<uint32_t> carry_mappings;
+  std::vector<uint32_t> carry_lut_mappings;
   uint32_t mapping_size{0};
   uint32_t carry_mapping_size{0};
+  uint32_t carry_lut_mapping_size{0};
   std::vector<uint32_t> functions;
   truth_table_cache<kitty::dynamic_truth_table> cache;
 };
@@ -69,8 +71,11 @@ struct mapping_view_storage<false>
   std::vector<uint32_t> mappings;
   // 0 if not in carry chain, number indicates part of which carry chain
   std::vector<uint32_t> carry_mappings;
+  // which luts are actually absorbed into 
+  std::vector<uint32_t> carry_lut_mappings;
   uint32_t mapping_size{0};
   uint32_t carry_mapping_size{0};
+  uint32_t carry_lut_mapping_size{0};
 };
 
 } // namespace detail
@@ -149,6 +154,7 @@ public:
 
     _mapping_storage->mappings.resize( ntk.size(), 0 );
     _mapping_storage->carry_mappings.resize( ntk.size(), 0 );
+    _mapping_storage->carry_lut_mappings.resize( ntk.size(), 0 );
 
     if constexpr ( StoreFunction )
     {
@@ -186,7 +192,11 @@ public:
     if (_mapping_storage->carry_mappings[this->node_to_index(n)] != 0) {
       return true;
     } else { return false; }
+  }
 
+  bool is_carry_lut ( node const& n) const {
+    
+    return true;    
   }
 
   void add_to_carry_mapping( node const& n, uint32_t carry_index )
@@ -222,13 +232,6 @@ public:
     {
       _mapping_storage->mappings.push_back( this->node_to_index( *begin++ ) );
     }
-    /*int i=0;
-    for (auto mapping : _mapping_storage->mappings) { 
-      std::cout << std::setw(2) << mapping << ",";
-      i++;
-      if (i%30==0) std::cout << "\n";
-    }
-    std::cout << "\n";*/
   }
 
   void remove_from_mapping( node const& n )

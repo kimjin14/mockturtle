@@ -162,6 +162,7 @@ public:
       if ( ntk.is_constant( n ) || ntk.is_pi( n ) || !ntk.is_cell_root( n ))
         return;
 
+
       std::vector<signal<NtkDest>> children;
       ntk.foreach_cell_fanin( n, [&]( auto fanin ) {
         children.push_back( node_to_signal[fanin] );
@@ -185,14 +186,13 @@ public:
         break;
       }
 
+      std::cout << n << " -> " << node_to_signal[n] << "\n";
       if (ntk.is_carry(n)) {
-        //std::cout << "\t\tThis one is a carry, making it into output ";
-        ntk.foreach_cell_fanin(n,[&](auto fanin) {
-          //std::cout << fanin << " ";
-        });
-        dest.create_po( node_to_signal[n] );
+        std::cout << "\t\tThis one is a carry, making it into output " << n ;
+        dest.create_carry (node_to_signal[n]);
         std::cout << "\n";
       }
+
     } );
 
     /* outputs */

@@ -155,6 +155,19 @@ public:
     _storage->outputs.emplace_back( f );
   }
 
+  void create_carry ( uint32_t index ) {
+      std::cout << "creating " << index << "\n";
+    _carry_nodes.push_back(index);
+  }
+
+  bool is_carry ( node const& n ) const {
+    bool carry = false;
+    for (auto &c: _carry_nodes) {
+      if (index_to_node(c) == n) carry = true; 
+    }
+    return n > 1 && carry;
+  }
+
   bool is_constant( node const& n ) const
   {
     return n <= 1;
@@ -297,7 +310,8 @@ public:
 
   auto num_gates() const
   {
-    return static_cast<uint32_t>(_storage->nodes.size() - _storage->inputs.size() - 2 );
+    return static_cast<uint32_t>(_storage->nodes.size() - _storage->inputs.size() - 2 \
+       - ceil(_carry_nodes.size()/2));
   }
 
   uint32_t fanin_size( node const& n ) const
@@ -497,6 +511,7 @@ public:
 public:
   std::shared_ptr<klut_storage> _storage;
   std::shared_ptr<network_events<base_type>> _events;
+  std::vector<uint64_t> _carry_nodes;
 };
 
 } // namespace mockturtle
