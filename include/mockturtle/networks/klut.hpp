@@ -156,7 +156,6 @@ public:
   }
 
   void create_carry ( uint32_t index ) {
-      std::cout << "creating " << index << "\n";
     _carry_nodes.push_back(index);
   }
 

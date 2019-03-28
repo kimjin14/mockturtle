@@ -149,12 +149,12 @@ public:
       // Map pre carry logic to LUTs
       // Using carry_lut_nodes vector 
       compute_carry_mapping();
-      int count = 0;
+      /*int count = 0;
       for (auto const& n: carry_lut_nodes) {
         if (n > 0) std::cout << n << "(" << count << ") ";
         count++;
       }
-      std::cout << "\n";
+      std::cout << "\n";*/
     }    
 
     //std::cout << "LUT mapping starts.\n";
@@ -209,7 +209,7 @@ private:
   void find_critical_paths() {
 
     auto depth = depth_view<Ntk>(ntk).depth();
-    std::cout << "\tFinding path with depth of " << depth << ".\n";
+    //std::cout << "\tFinding path with depth of " << depth << ".\n";
 
     for (uint32_t i = 0; i < ntk.num_pos(); i++) {
       auto n = ntk.get_po(i);
@@ -269,7 +269,7 @@ private:
       compute_best_cut_carry( ntk.node_to_index(n_first), 0, \
         ntk.node_to_index(n_carryin), &special_map);
     }
-    std::cout << "\tNumber of special mapping of nodes: " << special_map << "\n";
+    //std::cout << "\tNumber of special mapping of nodes: " << special_map << "\n";
 
 
     // TODO: still needs to figure out if LUT nodes are used elsewhere
@@ -987,9 +987,10 @@ private:
         auto nchild = ntk.get_children(n,c);
 
         // is the input from the other carry
-        if (is_a_carry_node(nchild)) {
-          continue;
-        } else  if (ntk.is_pi(nchild) ){
+        //if (is_a_carry_node(nchild)) {
+        //  continue;
+        //} else
+        if (ntk.is_pi(nchild) ){
           nodes.push_back(nchild);
         } else if (is_in_carry_lut(nchild)) { // node fits in lut before carry
           for (uint32_t i = 0; i < ntk.fanin_size(nchild); i++) {

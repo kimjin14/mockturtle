@@ -7,6 +7,7 @@
 
 #include <mockturtle/views/mapping_view.hpp>
 #include <mockturtle/views/depth_view.hpp>
+#include <mockturtle/views/carry_depth_view.hpp>
 #include <mockturtle/io/verilog_reader.hpp>
 //#include <mockturtle/algorithms/lut_mapping.hpp>
 #include <mockturtle/algorithms/carry_lut_mapping.hpp>
@@ -28,7 +29,7 @@ int main (int argc, char *argv[]){
   lorina::diagnostic_engine diag;
   lorina::return_code result;
 
-  std::cout << argv[1] << ",";
+  //std::cout << argv[1] << ",";
   
   // Read Verilog into a MIG network.
   result = lorina::read_verilog(argv[1], verilog_reader(mig) ,&diag);
@@ -42,7 +43,8 @@ int main (int argc, char *argv[]){
  
   // Map MIG to 6LUT
   mapping_view <mig_network, true> mapped_mig { mig };
-  carry_lut_mapping <mapping_view<mig_network,true>,true> (mapped_mig);  
+  //carry_lut_mapping (mapped_mig);  
+  carry_lut_mapping <mapping_view<mig_network,true>,false> (mapped_mig);  
   //lut_mapping <mapping_view<mig_network,true>,true> (mapped_mig); // for storing fcn
   //lut_mapping (mapped_mig);
 
@@ -55,7 +57,7 @@ int main (int argc, char *argv[]){
 
   auto const& klut = *klut_opt;
 
-  klut.foreach_gate([&](auto n) {
+ /* klut.foreach_gate([&](auto n) {
     if (klut.is_carry(n)) {
       std::cout << "carry ";
     } else {
@@ -64,9 +66,9 @@ int main (int argc, char *argv[]){
     std::cout << n << ":";
     kitty::print_hex(klut.node_function(n));
     std::cout << "\n";
-  });
+  });*/
 
-  depth_view depth_klut { klut }; 
+  carry_depth_view depth_klut { klut }; 
 
   std::cout << klut.num_gates() << "," << depth_klut.depth();
   mig.clear_values();
