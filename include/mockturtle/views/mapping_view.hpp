@@ -183,6 +183,15 @@ public:
     _mapping_storage->mapping_size = 0;
   }
 
+  uint32_t num_carry_lut_cells() const {
+    return _mapping_storage->carry_lut_mapping_size;
+  }
+
+  uint32_t num_carry_cells() const 
+  {
+    return _mapping_storage->carry_mapping_size;
+  }
+
   uint32_t num_cells() const
   {
     return _mapping_storage->mapping_size;
@@ -206,7 +215,9 @@ public:
     assert (_mapping_storage->carry_mappings[this->node_to_index( n )] == 0);
 
     // carry node index
-    _mapping_storage->carry_mappings[this->node_to_index( n )] = carry_index;
+    _mapping_storage->carry_mappings[this->node_to_index( n )]++;
+    _mapping_storage->carry_mapping_size++;
+    _mapping_storage->carry_lut_mapping_size+=carry_index;
   }
 
   template<typename LeavesIterator>
