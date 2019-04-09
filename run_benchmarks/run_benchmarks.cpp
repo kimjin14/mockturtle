@@ -9,6 +9,7 @@
 #include <mockturtle/views/depth_view.hpp>
 #include <mockturtle/views/carry_depth_view.hpp>
 #include <mockturtle/io/verilog_reader.hpp>
+#include <mockturtle/io/write_verilog.hpp>
 //#include <mockturtle/algorithms/lut_mapping.hpp>
 #include <mockturtle/algorithms/carry_lut_mapping.hpp>
 #include <mockturtle/algorithms/collapse_mapped.hpp>
@@ -48,6 +49,8 @@ int main (int argc, char *argv[]){
   //lut_mapping <mapping_view<mig_network,true>,true> (mapped_mig); // for storing fcn
   //lut_mapping (mapped_mig);
 
+  //std::cout << mapped_mig.num_carry_cells() << "," << mapped_mig.num_carry_lut_cells() << ",";
+
   // Collapse mapped MIG to LUT network
   const auto klut_opt = collapse_mapped_network<klut_network>( mapped_mig );
   if (klut_opt == std::nullopt) {
@@ -70,10 +73,12 @@ int main (int argc, char *argv[]){
 
   carry_depth_view depth_klut { klut }; 
 
-  std::cout << klut.num_gates() << "," << depth_klut.depth();
+  std::cout << klut.num_gates() << "," << float(depth_klut.depth()/7.0);
   mig.clear_values();
 
   std::cout << "\n";
+
+  //write_verilog(klut, "test.v");
 
   return 0;
 

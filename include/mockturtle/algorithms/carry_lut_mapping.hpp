@@ -134,10 +134,13 @@ public:
         compute_carry_mapping(path_for_carry);
         path_for_carry.clear();
       }
-  
+
+      //print_carry_lut_nodes(); 
+ 
       // Determine whether some nodes in LUT before carry has to be
       //  mapped as well (used by other functions)
       set_mapping_refs_for_carry();
+      //print_carry_lut_nodes(); 
     }    
 
     //std::cout << "LUT mapping starts.\n";
@@ -155,7 +158,6 @@ public:
 
     //std::cout << "Mapping derivation starts.\n";
     
-    // TODO: mapping derivation needs to account for carry
     derive_mapping();
   }
 
@@ -232,7 +234,6 @@ private:
       std::cout << n_carry << ",";
     }
     std::cout << "\n";
-    
   }
 
   void print_path (std::vector<node<Ntk>> path) {
@@ -241,6 +242,17 @@ private:
       std::cout << node << ",";
     }
     std::cout << "\n";
+  }
+
+  void print_carry_lut_nodes() {
+    std::cout << "Carry LUT Nodes\n";
+    for (int i = 0; i < carry_cut_list.size(); i++) {
+      std::cout << i << ": ";
+      for (auto const& cut: carry_cut_list[i]) {
+        std::cout << cut << ",";
+      }
+      std::cout << "\n";
+    }
   }
 
   // Decide which nodes can fit into LUT
@@ -255,26 +267,21 @@ private:
       auto& n_first = path_for_carry[i];
       auto& n_second = path_for_carry[i+1];
 
-      if (i == path_for_carry.size()-2) // odd number of nodes
+      if (i == path_for_carry.size()-1) // odd number of nodes
         special_map += check_child_node(n_first, 0, n_carryin);
       else
         special_map += check_child_node(n_first, n_second, n_carryin);
     }
+
+    //std::cout << "Number of specially mapped node to LUT: " << special_map << "\n";
   }
 
   bool is_a_carry_node(node<Ntk> n) {
     if (carry_nodes[n] == 1) return true;
     return false;
-    /*for (uint32_t j = 0; j < carry_nodes.size(); j++) {
-      if(n == carry_nodes[j]) {
-        return true;
-      }
-    }*/
-    return false; 
   }
 
   bool is_in_carry_lut(node<Ntk> n) {
-    //return false;
     if (!carry_cut_list[ntk.node_to_index(n)].empty()) return true;
     return false;
   }
@@ -292,61 +299,32 @@ private:
   }
 
   void set_mapping_refs_for_carry() {
-    // Check each node and if the fanin is used by another node NOT in carry
-    // carry_cut_list[fanin_index] has stuff means, it's put into LUT before carry
-    // check whether it needs to be mapped for other things
 
-    // Check fan-in of each node
-    //  if it's not a carry and its fan-in is in carry_cut_list
-    
-    for ( auto const& n : top_order) {
-      if (!is_a_carry_node(n)) {
-      ntk.foreach_fanin(n, [&](auto const& c) {
-        auto fanin_index = ntk.node_to_index(ntk.get_node(c));
-        if(!carry_cut_list[fanin_index].empty() && !is_a_carry_node(ntk.get_node(c)) ){
-          carry_cut_list[fanin_index].clear();
-          //std::cout << "clearing " << fanin_index << "\n";
-        }
-        //carry_cut_list[fanin_index].push_back(ntk.node_to_index(n));
-      });
-      }
-    }
+    for (auto const& n : top_order) {
 
-    /*std::cout << "Printing drivers\n";
-    for ( auto const& n : top_order) {
-      std::cout << "\t" << n << ":";
-      for (auto const& dindex: carry_cut_list[ntk.node_to_index(n)]){
-        std::cout << dindex << ",";
-      }
-      std::cout <<"\n";
-    }*/
-
-
-    for (auto const &n : carry_nodes) {
-      if (carry_cut_list[ntk.node_to_index(n)].size() < 4) {
-        for (auto const &cindex : carry_cut_list[ntk.node_to_index(n)]) {
-          if (!is_a_carry_node(ntk.index_to_node(cindex)) && \
-              !ntk.is_pi(ntk.index_to_node(cindex)) && \
-              !carry_cut_list[cindex].empty()) {
-            carry_cut_list[cindex].clear();
-            //std::cout << n << " is a prob\n";
-          }
-        }
-      }
-    }
-
-    // TODO: still needs to figure out if LUT nodes are used elsewhere
-    // it currently only checks if its used in another carry node
-    // This may work... still need to verify
-    /*for ( auto const& n : top_order ) {
+      // If node is not carry, its drivers should not be
+      //  in a carry LUT
       if (!is_a_carry_node(n)) {
         ntk.foreach_fanin(n, [&](auto const& c) {
-          auto index = ntk.node_to_index(ntk.get_node(c));
-          carry_cut_list[index]--; 
+          auto fanin_node = ntk.get_node(c); 
+          if (!is_a_carry_node(fanin_node) && is_in_carry_lut(fanin_node)) {
+            carry_cut_list[ntk.node_to_index(fanin_node)].clear();
+          }
+        });
+      } else {
+      // If node is in carry, its driver should not have
+      //  its fanin listed in carry's list
+        ntk.foreach_fanin(n, [&](auto const& c) {
+          auto fanin_node = ntk.get_node(c); 
+          for (auto cut_node : carry_cut_list[ntk.node_to_index(n)]) {
+            if (!is_a_carry_node(fanin_node) && (cut_node == fanin_node)) {
+              carry_cut_list[ntk.node_to_index(fanin_node)].clear();
+              break;
+            }
+          }
         });
       }
-    }*/
-
+    }
   }
 
   template<bool ELA>
@@ -367,32 +345,14 @@ private:
       }
     } );
 
-    // increase the map_refs for those not mapped to carry or carry lut
-    for (auto const n: carry_nodes) {
-      if (ntk.is_pi(n)) continue;
-      //std::cout << n <<":";
-      ntk.foreach_fanin(n, [&](auto const& c) {
-        auto fanin_node = ntk.get_node(c);
-        //std::cout << fanin_node;
-        // map if not a PI, not in carry lut, and not a carry node
-        if (!ntk.is_pi(fanin_node) && !ntk.is_constant(fanin_node) && \
-            !is_in_carry_lut(fanin_node) && \
-            !is_a_carry_node(fanin_node)) {
-          const auto index = ntk.node_to_index(ntk.get_node(c));
-          //std::cout << index << "\n";
-          //std::cout << "*";
-          map_refs[index]++;    
-        }
-        //std::cout << ",";
-      });
-      //std::cout << "\n";
-    }
-    for (auto const n: carry_nodes) {
-      if (ntk.is_pi(n)) continue;
-      for (auto const cut_index: carry_cut_list[ntk.node_to_index(n)]) {
-        if (!is_a_carry_node(ntk.index_to_node(cut_index)) && \
+    for (auto const& n : top_order) {
+      if (is_a_carry_node(n)) {
+        for (auto const cut_index: carry_cut_list[ntk.node_to_index(n)]) {
+          if (!is_a_carry_node(ntk.index_to_node(cut_index)) && \
              !ntk.is_pi(ntk.index_to_node(cut_index))) {
-          map_refs[cut_index]++;
+            map_refs[cut_index]++;
+            std::cout << "increasing the map_refs of " << cut_index << " \n";
+          }
         }
       }
     }
@@ -518,14 +478,15 @@ private:
         continue;
       } else {
         assert (curr_LUT < 2);
+
         if (ntk.is_constant(leaf_node)) {
           
         } else if (ntk.is_pi(leaf_node)) {
           input_array[curr_LUT][0]++;
           input_array[curr_LUT][curr_input+1] = leaf_node;
-          child_index[curr_LUT] = leaf_node;
           //std::cout << "input_array[" << curr_LUT << "][" << curr_input+1 << "] = " << leaf_node << ";\n";
           curr_input++;
+          child_index[curr_LUT] = leaf_node;
         } else {
           // Check the children of the cut for inputs
           for (uint32_t i_fanin = 0; i_fanin < ntk.fanin_size(leaf_node); i_fanin++) { 
@@ -582,16 +543,22 @@ private:
     assert (n_unique_index1 == n_shared_index1);
     assert (n_unique_index2 == n_shared_index2);
 
-    //std::cout << index1 << ":" << n_shared_index1 << "\n";
-    //std::cout << index2 << ":" << n_shared_index2 << "\n";
+    /*std::cout << index1 << ":" << n_shared_index1 << "\n";
+    std::cout << index2 << ":" << n_shared_index2 << "\n";
 
-    //for (uint32_t j = 0; j < n_shared_index1; j++) {
-    //  std::cout << abce0f0[j] << ",";
-    //}  std::cout << "\n";
-    //for (uint32_t j = 0; j < n_shared_index2; j++) {
-    //  std::cout << abde1f1[j] << ",";
-    //}  std::cout << "\n";
-
+    for (uint32_t j = 0; j < n_shared_index1; j++) {
+      std::cout << abce0f0[j] << ",";
+    }  std::cout << "\n";
+    for (uint32_t j = 0; j < n_shared_index2; j++) {
+      std::cout << abde1f1[j] << ",";
+    }  std::cout << "\n";
+    for (uint32_t j = 0; j < 2; j++) {
+      std::cout << index1_child[j] << ",";
+    }  std::cout << "\n";
+    for (uint32_t j = 0; j < 2; j++) {
+      std::cout << index2_child[j] << ",";
+    }  std::cout << "\n";
+*/
     // Add carry in to the carry cut list
     carry_cut_list[index1].push_back(carryin);
     if (index2!=0) carry_cut_list[index2].push_back(index1);
@@ -663,6 +630,7 @@ private:
         if (abce0f0[i] == abde1f1[j]) n_matches++;
       }
     }
+
     if (n_unique_index1 + n_unique_index2 - n_matches <= 8) {
       // Update carry cut list
       for (uint32_t j = 0; j < n_shared_index1; j++) {
@@ -682,11 +650,8 @@ private:
         }
       }
       std::cout << index1 << " " << index2 << " does fit\n";
-      //std::cout << "Index 1 & 2 does fit\n";
       return 2;
     }
-    //std::cout << "Nothing fits\n";
-      std::cout << index1 << " " << index2 << " does not fit\n";
 
     for (uint32_t i = 0; i < 2; i++) { 
       if (index1_child[i] != 0) {
@@ -698,6 +663,8 @@ private:
         //carry_cut_list[index2_child[i]].push_back(index2);
       }
     }
+    std::cout << index1 << " " << index2 << " does not fit\n";
+
     return 0;
   } 
 
@@ -996,15 +963,14 @@ private:
   // Add to regular mapping with inputs correctly representing either
   //    mapped child node inputs, the child node 
   void derive_carry_chain_mapping() {
-    for (auto const n: carry_nodes) {
-      if (ntk.is_constant(n) || ntk.is_pi(n)) 
+    //for (auto const n: carry_nodes) {
+    for ( auto const& n : top_order ) {
+      if (ntk.is_constant(n) || ntk.is_pi(n) || !is_a_carry_node(n))
         continue;
 
       std::cout << "\tCarry Mapping " << n << ":";
-      uint32_t count = 0; 
       std::vector<node<Ntk>> nodes;
 
-      // Check if fan-in is a lut
       for ( auto c: carry_cut_list[ntk.node_to_index(n)]) {
         nodes.push_back(c);
         std::cout << c << ",";
@@ -1032,7 +998,7 @@ private:
       }*/
 
       ntk.add_to_mapping( n, nodes.begin(), nodes.end() );
-      ntk.add_to_carry_mapping (n, count); 
+      ntk.add_to_carry_mapping (n, 0); 
     }
   }
 
