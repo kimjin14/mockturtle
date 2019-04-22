@@ -51,6 +51,7 @@ struct lut_mapping_params
   bool verbose{false};
 
   bool carry_mapping{true};
+  uint32_t path_depth = 30;
 };
 
 /*! \brief Statistics for lut_mapping.
@@ -119,28 +120,38 @@ public:
 
     init_nodes();
 
+   
+    //print_state(); 
+ 
     if (ps.carry_mapping) {
 
       std::vector<node<Ntk>> path_for_carry;
+    
+      // First round of regular mapping
+      set_mapping_refs<false>();
+      compute_mapping<false>();
 
-      // Determines how many paths are to be mapped
       for (int i = 0; i < 4; i++) { 
-        
-        // Find the path to be placed on carry
-        find_critical_paths(path_for_carry);
-        print_path(path_for_carry);
+        // 1) Find the longest chain starting from PO
+        // Needs to know the depth and "cut off depth (30)"
+        //find_critical_paths(path_for_carry);
+
+        // 2) For each mapped node go to the LUT that's causing the deepest LUT level
+        // From there, start putting longest chain on the carry chain
+        //find_critical_LUT_chain (path_for_carry);
+
+        // 3) Multiple paths from one PO mapping
+        select_longest_paths(path_for_carry);
 
         // Compute whether LUTs before carry can be used
         compute_carry_mapping(path_for_carry);
         path_for_carry.clear();
       }
-
-      //print_carry_lut_nodes(); 
- 
       // Determine whether some nodes in LUT before carry has to be
       //  mapped as well (used by other functions)
+
+      init_nodes();
       set_mapping_refs_for_carry();
-      //print_carry_lut_nodes(); 
     }    
 
     //std::cout << "LUT mapping starts.\n";
@@ -167,12 +178,121 @@ private:
     return static_cast<uint32_t>( cut->data.cost );
   }
 
+  bool add_find_longest_path_in_mapping (std::vector<node<Ntk>>& path_for_carry, 
+      uint32_t source_index, uint32_t dest_index) {
+
+    auto const& n = ntk.index_to_node(source_index);
+    
+    ntk.set_visited(n, 1);
+
+    if (source_index == dest_index) {
+      return true;
+    }
+ 
+    bool found = false; 
+    for (uint32_t i = 0; i < ntk.fanin_size(n); i++) {
+      auto const leaf = ntk.get_children(n,i);
+      auto const leaf_index = ntk.node_to_index(leaf);
+      if (!ntk.is_constant(leaf) && ntk.visited(leaf) == 0)
+      found = add_find_longest_path_in_mapping (path_for_carry, leaf_index, dest_index);
+      if (found) {
+        path_for_carry.push_back(leaf);
+        carry_nodes[leaf] = 1;
+        std::cout << leaf_index;
+        std::cout << ",";
+        return true;
+      }
+    }
+    return found;
+  }
+
+  bool find_all_deep_LUTs (std::vector<node<Ntk>>& path_for_carry, uint32_t index) { 
+
+
+    if (delays[index] == 0) {
+      //std::cout << "Found final " << index << "\n";
+      return true;
+    } 
+
+    bool deepest = false;
+    for ( auto leaf : cuts.cuts( index )[0] ){
+  
+      std::cout << index << " " << delays[index] <<  " & " << leaf << " " << delays[leaf] << "(" << ntk.visited(leaf) << ")" <<"\n"; 
+      if (delays[index]-1 == delays[leaf] && !is_a_carry_node(leaf)) {
+        deepest = find_all_deep_LUTs(path_for_carry, leaf);
+        if (deepest)  {
+          ntk.clear_visited();
+          add_find_longest_path_in_mapping(path_for_carry, index, leaf); 
+          //std::cout << index << " " << delays[index] <<  " & " << leaf << " " << delays[leaf] << "(" << ntk.visited(leaf) << ")" <<"\n"; 
+          //std::cout << "Found " << index << "\n";
+          break;
+        }
+      }
+    }
+    return deepest;
+  }
+
+
+  void select_longest_paths (std::vector<node<Ntk>>& path_for_carry) {
+    // In reverse order of nodes, look at the longest path and select ALL paths
+    // that lead to that node
+    ntk.clear_visited();
+    //for ( auto it = top_order.rbegin(); it != top_order.rend(); ++it ) {
+      auto it = top_order.rbegin();
+      const auto index = ntk.node_to_index( *it );
+      std::cout << "start " << index << "(" << delays[index] << ")\n";
+      find_all_deep_LUTs(path_for_carry,index);
+      //if (find_all_deep_LUTs(path_for_carry,index))
+      //break;
+    //}
+  }
+
+  // Keep going deeper to its fanin until depth is found
+  bool find_deepest_LUT (std::vector<node<Ntk>>& path_for_carry, uint32_t index) { 
+
+    //std::cout << index << " " << delays[index] << "\n"; 
+
+    if (delays[index] == 0) {
+      //std::cout << "Found final " << index << "\n";
+      return true;
+    } 
+
+    bool deepest = false;
+    for ( auto leaf : cuts.cuts( index )[0] ){
+  
+      if (delays[index]-1 == delays[leaf]) {
+        deepest = find_deepest_LUT(path_for_carry, leaf);
+        if (deepest)  {
+          ntk.clear_visited();
+          add_find_longest_path_in_mapping(path_for_carry, index, leaf); 
+          //std::cout << "Found " << index << "\n";
+          break;
+        }
+      }
+    }
+    return deepest;
+  }
+  
+  // For each output, recursively go to the next node
+  //  until the deepest LUT depth is found
+  void find_critical_LUT_chain(std::vector<node<Ntk>>& path_for_carry) {
+
+    // Search through the nodes in reverse order 
+    for ( auto it = top_order.rbegin(); it != top_order.rend(); ++it ) {
+      const auto index = ntk.node_to_index( *it );
+      if (is_a_carry_node(*it) )
+        continue;
+      else if (find_deepest_LUT(path_for_carry,index))
+        break;
+    }
+  }
+
   // These functions find a path that is not already on the carry chain
   bool get_path(std::vector<node<Ntk>>& path_for_carry, 
       node<Ntk> n, uint32_t depth, uint32_t curr_depth) {
 
-    if (ntk.is_pi(n)) {
-      if (curr_depth == depth) {
+    if (ntk.is_pi(n) || curr_depth == 30) {
+      if (curr_depth == depth || curr_depth == 30) {
         carry_nodes[n] = 1;
         path_for_carry.push_back(n);
         return true;
@@ -199,6 +319,8 @@ private:
 
     auto depth = depth_view<Ntk>(ntk).depth();
 
+    //std::cout << "looking for " << depth << "\n";
+
     for (uint32_t i = 0; i < ntk.num_pos(); i++) {
       auto n = ntk.get_po(i);
       if (is_a_carry_node(n) || is_in_carry_lut(n)) continue;
@@ -212,6 +334,7 @@ private:
   {
     ntk.foreach_node( [this]( auto n, auto ) {
       const auto index = ntk.node_to_index( n );
+      map_refs[index] = 0;
 
       if ( ntk.is_constant( n ) || ntk.is_pi( n ) )
       {
@@ -351,7 +474,7 @@ private:
           if (!is_a_carry_node(ntk.index_to_node(cut_index)) && \
              !ntk.is_pi(ntk.index_to_node(cut_index))) {
             map_refs[cut_index]++;
-            std::cout << "increasing the map_refs of " << cut_index << " \n";
+            //std::cout << "increasing the map_refs of " << cut_index << " \n";
           }
         }
       }
@@ -575,7 +698,7 @@ private:
           //carry_cut_list[index2_child[i]].push_back(index2);
         }
       }
-      std::cout << index1 << " " << index2 << " does not fit\n";
+      //std::cout << index1 << " " << index2 << " does not fit\n";
       return 0;
     }
 
@@ -596,7 +719,7 @@ private:
         }
       }
       //std::cout << "Index 1 does not fit\n";
-      std::cout << index1 << " does not fit " << index2 << " does fit\n";
+      //std::cout << index1 << " does not fit " << index2 << " does fit\n";
       return 1;
     }
 
@@ -618,7 +741,7 @@ private:
         }
       }
       //std::cout << "Index 2 does not fit\n";
-      std::cout << index2 << " does not fit " << index1 << " does fit\n";
+      //std::cout << index2 << " does not fit " << index1 << " does fit\n";
       return 1;
     }
   
@@ -649,7 +772,7 @@ private:
           carry_cut_list[index2_child[i]].push_back(index2);
         }
       }
-      std::cout << index1 << " " << index2 << " does fit\n";
+      //std::cout << index1 << " " << index2 << " does fit\n";
       return 2;
     }
 
@@ -663,7 +786,7 @@ private:
         //carry_cut_list[index2_child[i]].push_back(index2);
       }
     }
-    std::cout << index1 << " " << index2 << " does not fit\n";
+    //std::cout << index1 << " " << index2 << " does not fit\n";
 
     return 0;
   } 
@@ -968,14 +1091,14 @@ private:
       if (ntk.is_constant(n) || ntk.is_pi(n) || !is_a_carry_node(n))
         continue;
 
-      std::cout << "\tCarry Mapping " << n << ":";
+      //std::cout << "\tCarry Mapping " << n << ":";
       std::vector<node<Ntk>> nodes;
 
       for ( auto c: carry_cut_list[ntk.node_to_index(n)]) {
         nodes.push_back(c);
-        std::cout << c << ",";
+        //std::cout << c << ",";
       }
-      std::cout << "\n";
+      //std::cout << "\n";
       //count = carry_cut_list[ntk.node_to_index(n)].size() - 2;
       
       /*for (uint32_t c = 0; c < ntk.fanin_size(n); c++) {
@@ -1053,6 +1176,11 @@ private:
       std::cout << fmt::format( "*** Obj = {:>3} (node = {:>3})  FlowRefs = {:5.2f}  MapRefs = {:>2}  Flow = {:5.2f}  Delay = {:>3}\n", i, ntk.index_to_node( i ), flow_refs[i], map_refs[i], flows[i], delays[i] );
     }
     std::cout << fmt::format( "Level = {}  Area = {}\n", delay, area );
+
+    for (auto const& n : top_order) {
+      uint32_t i = ntk.node_to_index(n);
+      std::cout << fmt::format( "*** Obj = {:>3} (node = {:>3})  FlowRefs = {:5.2f}  MapRefs = {:>2}  Flow = {:5.2f}  Delay = {:>3}\n", i, ntk.index_to_node( i ), flow_refs[i], map_refs[i], flows[i], delays[i] );
+    }
   }
 
 private:
