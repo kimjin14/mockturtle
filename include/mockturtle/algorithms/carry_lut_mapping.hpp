@@ -29,7 +29,7 @@ struct lut_mapping_params
   lut_mapping_params()
   {
     cut_enumeration_ps.cut_size = 6;
-    cut_enumeration_ps.cut_limit = 8;
+    cut_enumeration_ps.cut_limit = 20;
   }
 
   /*! \brief Parameters for cut enumeration
@@ -131,7 +131,7 @@ public:
       set_mapping_refs<false>();
       compute_mapping<false>();
 
-      for (int i = 0; i < 4; i++) { 
+      for (int i = 0; i < 1; i++) { 
         // 1) Find the longest chain starting from PO
         // Needs to know the depth and "cut off depth (30)"
         //find_critical_paths(path_for_carry);
@@ -151,10 +151,10 @@ public:
       //  mapped as well (used by other functions)
 
       init_nodes();
-      set_mapping_refs_for_carry();
+      //set_mapping_refs_for_carry();
     }    
 
-    //std::cout << "LUT mapping starts.\n";
+    std::cout << "LUT mapping starts.\n";
     set_mapping_refs<false>();
 
     while ( iteration < ps.rounds )
@@ -217,7 +217,7 @@ private:
     bool deepest = false;
     for ( auto leaf : cuts.cuts( index )[0] ){
   
-      std::cout << index << " " << delays[index] <<  " & " << leaf << " " << delays[leaf] << "(" << ntk.visited(leaf) << ")" <<"\n"; 
+      //std::cout << index << " " << delays[index] <<  " & " << leaf << " " << delays[leaf] << "(" << ntk.visited(leaf) << ")" <<"\n"; 
       if (delays[index]-1 == delays[leaf] && !is_a_carry_node(leaf)) {
         deepest = find_all_deep_LUTs(path_for_carry, leaf);
         if (deepest)  {
@@ -240,8 +240,9 @@ private:
     //for ( auto it = top_order.rbegin(); it != top_order.rend(); ++it ) {
       auto it = top_order.rbegin();
       const auto index = ntk.node_to_index( *it );
-      std::cout << "start " << index << "(" << delays[index] << ")\n";
+      std::cout << "start " << index << "(" << delays[index] << "):";
       find_all_deep_LUTs(path_for_carry,index);
+      std::cout << "\n";
       //if (find_all_deep_LUTs(path_for_carry,index))
       //break;
     //}
@@ -391,9 +392,11 @@ private:
       auto& n_second = path_for_carry[i+1];
 
       if (i == path_for_carry.size()-1) // odd number of nodes
-        special_map += check_child_node(n_first, 0, n_carryin);
+        special_map += check_cut_carry(n_first, 0, n_carryin);
+        //special_map += check_child_node(n_first, 0, n_carryin);
       else
-        special_map += check_child_node(n_first, n_second, n_carryin);
+        special_map += check_cut_carry(n_first, n_second, n_carryin);
+        //special_map += check_child_node(n_first, n_second, n_carryin);
     }
 
     //std::cout << "Number of specially mapped node to LUT: " << special_map << "\n";
@@ -468,13 +471,14 @@ private:
       }
     } );
 
+    // Nodes driving the carry need to be mapped
+    // Unless they are a carry itself or an input
     for (auto const& n : top_order) {
       if (is_a_carry_node(n)) {
         for (auto const cut_index: carry_cut_list[ntk.node_to_index(n)]) {
           if (!is_a_carry_node(ntk.index_to_node(cut_index)) && \
              !ntk.is_pi(ntk.index_to_node(cut_index))) {
             map_refs[cut_index]++;
-            //std::cout << "increasing the map_refs of " << cut_index << " \n";
           }
         }
       }
@@ -561,7 +565,6 @@ private:
       }
       if (!match) {
         unique_array[*n_shared] = input_array[0][i+1];  
-        (*n_shared)++;
         index++;
       }
       match = false;
@@ -575,13 +578,70 @@ private:
       }
       if (!match) {
         unique_array[index] = input_array[1][i+1];  
-        (*n_shared)++;
         index++;
       }
       match = false;
     } 
 
     return index;
+  }
+
+  // a b c e0
+  // a b c f0
+  // 5 unique inputs are possible, 3 shared
+  bool check_5lut_legality (uint32_t input_array[2][5], \
+      uint32_t unique_array[8], uint32_t* n_shared, uint32_t* n_total) {
+
+    bool match = false;
+
+    uint32_t abc = 0;
+    uint32_t e0f0 = 0;
+
+    //std::cout << "top LUT size " << input_array[0][0] << \
+    //  " bottom LUT size " << input_array[1][0] << "\n";
+    // Find all shared values and put it in first 3 of the unique_array
+    // The unique values from array[0] (doesn't match) go into the last 2 elements of array
+    for (uint32_t i = 0; i < input_array[0][0]; i++) {
+      //std::cout << "checking top LUT " << input_array[0][i+1] << "\n";
+      for (uint32_t j = 0; j < input_array[1][0]; j++) {
+        if (input_array[0][i+1] == input_array[1][j+1]) {
+          unique_array[abc] = input_array[0][i+1];  
+          abc++;
+          match = true;
+          continue;
+        } 
+      }
+      if (!match) {
+        e0f0++;
+        if (e0f0 > 5) return false;
+        unique_array[5-e0f0] = input_array[0][i+1];  
+      }
+      match = false;
+    }
+    // The unique values from arrayp1[ (doesn't match) go into the last 2 elements of array
+    match = false;
+    for (uint32_t i = 0; i < input_array[1][0]; i++) {
+      //std::cout << "checking bottom LUT " << input_array[1][i+1] << "\n";
+      for (uint32_t j = 0; j < input_array[0][0]; j++) {
+        if (input_array[0][j+1] == input_array[1][i+1]) {
+          match = true;
+          continue;
+        } 
+      }
+      if (!match) {
+        e0f0++;
+        if (e0f0 > 5) return false;
+        unique_array[5-e0f0] = input_array[1][i+1];  
+      }
+      match = false;
+    } 
+
+    // abc + e0f0 should be less than 5
+    // n_shared keeps track of how many are actually shared 
+    (*n_total) = abc + e0f0;
+    (*n_shared) = abc;
+    if (abc <= 3 && abc + e0f0 <= 5) return true;
+    return false;
   }
 
   // This function adds child's inputs to an array for input legality checking
@@ -627,6 +687,231 @@ private:
       }
     }
   }
+
+  void get_children_node (node<Ntk>child_index[2], uint32_t index, uint32_t carryin) {
+
+    uint32_t curr_LUT = 0;
+    uint32_t curr_input= 0;
+    auto const& curr_node = ntk.index_to_node(index);
+
+    // This makes sure that we are dealing with MIG nodes
+    assert (ntk.fanin_size(curr_node) == 3);
+
+    for (uint32_t i_fanin = 0; i_fanin < ntk.fanin_size(curr_node); i_fanin++) { 
+      node<Ntk> leaf_node = ntk.get_children (curr_node, i_fanin);  
+      
+      // If the chilren node is the carry-in, skip
+      if (leaf_node == carryin) {
+        continue;
+      } else {
+        child_index[curr_LUT] = leaf_node;
+        curr_LUT++;
+      }
+    }
+  }
+
+  // This function takes an array and an index with its carry-in index
+  // and figures out the 2 driving children and fills input array with chilldren's cut nodes
+  bool insert_cuts_to_array (uint32_t cut_array[2][5], 
+      uint32_t index, uint32_t carryin, uint32_t cut_index1, uint32_t cut_index2) {
+
+    uint32_t curr_LUT = 0;
+    uint32_t curr_input= 0;
+    auto const& curr_node = ntk.index_to_node(index);
+
+    // This makes sure that we are dealing with MIG nodes
+    assert (ntk.fanin_size(curr_node) == 3);
+
+    for (uint32_t i_fanin = 0; i_fanin < ntk.fanin_size(curr_node); i_fanin++) { 
+      node<Ntk> leaf_node = ntk.get_children (curr_node, i_fanin);  
+      
+      // If the chilren node is the carry-in, skip
+      if (leaf_node == carryin) {
+        continue;
+      } else {
+         
+        // If the child node is PI, no cuts so add to it 
+        if (ntk.is_pi(leaf_node)) {
+          cut_array[curr_LUT][0]++;
+          cut_array[curr_LUT][curr_input+1] = leaf_node;
+          curr_input++;
+
+        // If the child node is not a constant, check its cuts
+        } else if (!ntk.is_constant(leaf_node)){
+
+          // Check each cut of leaf node and add to the array
+          auto cut_index = cut_index1;
+          if (curr_LUT == 1) cut_index = cut_index2;
+          cut_t const& cut = cuts.cuts(leaf_node)[cut_index]; 
+
+          if (cut.size() > 4 || cut.size() == 0) {
+            return false;
+          }
+          //std::cout << "\t" << cut << "\n";
+          for (auto cut_leaf: cut) { 
+            if (ntk.is_constant(cut_leaf)) continue;
+            cut_array[curr_LUT][0]++;
+            cut_array[curr_LUT][curr_input+1] = cut_leaf;
+            //std::cout << "input_array[" << curr_LUT << "][" << curr_input+1 << "] = " << child_leaf_node << ";\n";
+            curr_input++;
+          }
+        }
+        curr_LUT++;
+        curr_input = 0;
+      }
+    }
+    return true;
+  }
+
+  // convention is that carry_cut_list contains 
+  // the inputs to the carry LUT (so push_back)*
+  //  *maybe change to keep cut numbers
+  void insert_cut_to_carrylut (uint32_t index1, uint32_t index2, \
+      uint32_t cindex1_1, uint32_t cindex1_2, uint32_t cindex2_1, uint32_t cindex2_2, \
+      uint32_t i, uint32_t j, uint32_t k, uint32_t l) {
+    cut_t const& cut1_1 = cuts.cuts(cindex1_1)[i];
+    cut_t const& cut1_2 = cuts.cuts(cindex1_2)[j];
+    for (auto cut_leaf: cut1_1)  
+      carry_cut_list[index1].push_back(cut_leaf);
+    for (auto cut_leaf: cut1_2)  
+      carry_cut_list[index1].push_back(cut_leaf);
+
+    if (index2 != 0) {
+      cut_t const& cut2_1 = cuts.cuts(cindex2_1)[k];
+      cut_t const& cut2_2 = cuts.cuts(cindex2_2)[l];
+      for (auto cut_leaf: cut2_1)  
+        carry_cut_list[index2].push_back(cut_leaf);
+      for (auto cut_leaf: cut2_2)  
+        carry_cut_list[index2].push_back(cut_leaf);
+    }
+  }
+
+  // This function takes 2 index with its carry-in index and figurse out 
+  // if it cuts can be mapped to LUTs before carry node
+  // Check if inputs are legal
+  // each index can only have 5 unique inputs
+  // index1 can't have more than 5 unique inputs
+  //    e0 c b a
+  //    f0 c b a
+  //    e1 d b a
+  //    f1 d b a
+  int check_cut_carry(uint32_t index1, uint32_t index2, uint32_t indexc) {
+
+    int32_t cost = 0;
+    int32_t max_cost = 0;
+    int32_t max_i = -1;
+    int32_t max_j = -1;
+    int32_t max_k = -1;
+    int32_t max_l = -1;
+    std::cout << "index1 " << index1 << " and " << index2 << "\n";
+
+    node<Ntk> index1_child[2] = {0};
+    node<Ntk> index2_child[2] = {0};
+
+    get_children_node (index1_child, index1, indexc); 
+    if (index2 != 0) get_children_node (index2_child, index2, index1); 
+
+    for (uint32_t cut_index1_1 = 0; cut_index1_1 < cuts.cuts(index1_child[0]).size(); cut_index1_1++) {
+      for (uint32_t cut_index1_2 = 0; cut_index1_2 < cuts.cuts(index1_child[1]).size(); cut_index1_2++) {
+        for (uint32_t cut_index2_1 = 0; cut_index2_1 < cuts.cuts(index2_child[0]).size(); cut_index2_1++) {
+          for (uint32_t cut_index2_2 = 0; cut_index2_2 < cuts.cuts(index2_child[1]).size(); cut_index2_2++) {
+
+        cost = 0;
+
+        // Array holding the nodes to the halfs of ALM as separate 4-LUT
+        uint32_t index1_child_cuts[2][5] = {0}; 
+        uint32_t index2_child_cuts[2][5] = {0}; 
+
+        uint32_t abce0f0[8] = {0};
+        uint32_t abde1f1[8] = {0};
+  
+        uint32_t ntotal_index1 = 0;
+        uint32_t ntotal_index2 = 0;
+   
+        // compare first 2 4-LUT and count matches and unique innputs 
+        uint32_t nshared_index1 = 0;
+        uint32_t nshared_index2 = 0;
+
+        bool index1_status = false;
+        bool index2_status = false;
+
+        uint32_t cost_index1 = 0;
+        uint32_t cost_index2 = 0;
+
+        // insert_cuts_to_array checks whether cut index can fit into the 4-LUT
+        // check_5lut_legality checks whether those cuts can map to 5-LUT
+        if (insert_cuts_to_array (index1_child_cuts, index1, indexc, cut_index1_1, cut_index1_2)) {
+          index1_status = check_5lut_legality (index1_child_cuts, abce0f0, &nshared_index1, &ntotal_index1);
+          cost_index1 = cuts.cuts(index1_child[0])[cut_index1_1].size() +
+              cuts.cuts(index1_child[1])[cut_index1_2].size();
+        }
+      
+        // if index2 is 0, it's not used 
+        if (index2 != 0) {
+          if (insert_cuts_to_array (index2_child_cuts, index2, index1, cut_index2_1, cut_index2_2)) { 
+            index2_status = check_5lut_legality (index2_child_cuts, abde1f1, &nshared_index2, &ntotal_index2);
+            cost_index2 = cuts.cuts(index2_child[0])[cut_index2_1].size() +
+                cuts.cuts(index2_child[1])[cut_index2_2].size();
+          }
+        } 
+
+        if (index1_status && index2_status) { 
+          // At this point, both 5 LUTs are legal
+          // Now we need to check for 6 LUT input legality
+          // Depending on the total number of inputs, 
+          uint32_t nshared_matches = 0; 
+          for (uint32_t i = 0; i < nshared_index1; i++) {
+            assert (abce0f0[i] != 0);
+            for (uint32_t j = 0; j < nshared_index2; j++) {
+              if (abce0f0[i] == abde1f1[j]) nshared_matches++;
+            }
+          }
+          uint32_t nmatches = 0; 
+          for (uint32_t i = 0; i < 5; i++) {
+            if (abce0f0[i] == 0) continue;
+            for (uint32_t j = 0; j < 5; j++) {
+              if (abce0f0[i] == abde1f1[j]) nmatches++;
+            }
+          }
+          assert(nshared_index1 <= 3 && nshared_index2 <= 3);
+          if ((ntotal_index1 + ntotal_index2 - nmatches) <= 8) {
+            if (int(nshared_matches) >= int((nshared_index1 - 1) + (nshared_index2 - 1) - \
+                (5 - ntotal_index1) - (5 - ntotal_index2))){ 
+              //std::cout << "Should fit.\n";
+            }             //std::cout << "Index1 has " << nshared_index1 << " shared and total of " \
+            //  << ntotal_index1 << " ; there were " << nshared_matches << " shared matches " \
+            //  << "and it needed " << int((nshared_index1 - 1) - (5 - ntotal_index1)) << ".\n";
+            //std::cout << "Index2 has " << nshared_index2 << " shared and total of " \
+            //  << ntotal_index2 << " ; there were " << nshared_matches << " shared matches " \
+            //  << "and it needed " << int((nshared_index2 - 1) - (5 - ntotal_index2)) << ".\n";
+          } else {
+            if (cost_index1 > cost_index2) index2_status = false;
+          }
+        }
+
+        cost = cost_index1 + cost_index2; 
+
+        if (cost > max_cost) {
+          max_cost = cost;
+          max_i = cut_index1_1;
+          max_j = cut_index1_2;
+          max_k = cut_index2_1;
+          max_l = cut_index2_2;
+        }
+
+          }
+        }
+      }
+    }
+
+    insert_cut_to_carrylut (index1, index2, index1_child[0], index1_child[1], \
+        index2_child[0], index2_child[1], max_i, max_j, max_k, max_l); 
+
+    std::cout << "Max cost was " << max_cost << " with combinations " << max_i << " " << max_j << " " << max_k << " " << max_l << "\n";
+    std::cout << "done\n";
+    return 0;
+  } 
+
 
   // Takes 2 indices and the carryin node value and determines whether its
   // children can fit into the LUTs preceding FA
