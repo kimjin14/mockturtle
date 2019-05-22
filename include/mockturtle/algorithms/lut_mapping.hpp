@@ -1,5 +1,5 @@
 /* mockturtle: C++ logic network library
- * Copyright (C) 2018  EPFL
+ * Copyright (C) 2018-2019  EPFL
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -482,7 +482,7 @@ private:
  * - `uint32_t delay`
  * - `float flow`
  * - `float costs`
- * 
+ *
  * See `include/mockturtle/algorithms/cut_enumeration/mf_cut.hpp` for one
  * example of a CutData type that implements the cost function that is used in
  * the LUT mapper `&mf` in ABC.

@@ -1,5 +1,5 @@
 /* mockturtle: C++ logic network library
- * Copyright (C) 2018  EPFL
+ * Copyright (C) 2018-2019  EPFL
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -225,6 +225,12 @@ public:
     return _storage->data.latches[ index ];
   }
 
+  bool is_combinational() const
+  {
+    return ( static_cast<uint32_t>( _storage->inputs.size() ) == _storage->data.num_pis &&
+             static_cast<uint32_t>( _storage->outputs.size() ) == _storage->data.num_pos );
+  }
+
   bool is_constant( node const& n ) const
   {
     return n == 0;
@@ -353,6 +359,16 @@ public:
     return !create_or( a, b );
   }
 
+  signal create_lt( signal const& a, signal const& b )
+  {
+    return create_and( !a, b );
+  }
+
+  signal create_le( signal const& a, signal const& b )
+  {
+    return !create_and( a, !b );
+  }
+
   signal create_xor( signal const& a, signal const& b )
   {
     const auto fcompl = a.complement ^ b.complement;
@@ -377,6 +393,11 @@ public:
     }
 
     return create_and( !create_and( !cond, f_else ), !create_and( cond, f_then ) ) ^ !f_compl;
+  }
+
+  signal create_xor3( signal const& a, signal const& b, signal const& c )
+  {
+    return create_xor( create_xor( a, b ), c );
   }
 #pragma endregion
 

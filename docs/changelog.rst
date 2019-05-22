@@ -1,8 +1,23 @@
 Change Log
 ==========
 
-v0.1 (not yet released)
+v0.2 (not yet released)
 -----------------------
+
+* Network interface:
+    - `is_function` `#148 <https://github.com/lsils/mockturtle/pull/148>`_
+* Framework for performing quality and performance experiments `#140 <https://github.com/lsils/mockturtle/pull/140>`_
+* Algorithms:
+    - CNF generation (`generate_cnf`) `#145 <https://github.com/lsils/mockturtle/pull/145>`_
+    - SAT-based LUT mapping (`satlut_mapping`) `#122 <https://github.com/lsils/mockturtle/pull/122>`_
+    - Miter generation (`miter`) `#148 <https://github.com/lsils/mockturtle/pull/148>`_
+    - Combinational equivalence checking (`equivalence_checking`) `#149 <https://github.com/lsils/mockturtle/pull/149>`_
+    - CNF based cut enumeration (`cnf_cut`) `#155 <https://github.com/lsils/mockturtle/pull/155>`_
+* I/O:
+    - Write networks to DIMACS files for CNF (`write_dimacs`) `#146 <https://github.com/lsils/mockturtle/pull/146>`_
+
+v0.1 (March 31, 2019)
+---------------------
 
 * Initial network interface
   `#1 <https://github.com/lsils/mockturtle/pull/1>`_ `#61 <https://github.com/lsils/mockturtle/pull/61>`_ `#96 <https://github.com/lsils/mockturtle/pull/96>`_ `#99 <https://github.com/lsils/mockturtle/pull/99>`_
@@ -35,6 +50,7 @@ v0.1 (not yet released)
     - Direct resynthesis of functions into primitives (`direct_resynthesis`) `#90 <https://github.com/lsils/mockturtle/pull/90>`_
     - XAG optimum multiplicative complexity resynthesis (`xag_minmc_resynthesis`) `#100 <https://github.com/lsils/mockturtle/pull/100>`_
     - AIG/XAG resynthesis (`xag_npn_resynthesis`) `#102 <https://github.com/lsils/mockturtle/pull/102>`_
+    - DSD decomposition (`dsd_decomposition`) `#137 <https://github.com/lsils/mockturtle/pull/137>`_
 * Views:
     - Visit nodes in topological order (`topo_view`) `#3 <https://github.com/lsils/mockturtle/pull/3>`_
     - Disable structural modifications to network (`immutable_view`) `#3 <https://github.com/lsils/mockturtle/pull/3>`_

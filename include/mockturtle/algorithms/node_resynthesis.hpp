@@ -1,5 +1,5 @@
 /* mockturtle: C++ logic network library
- * Copyright (C) 2018  EPFL
+ * Copyright (C) 2018-2019  EPFL
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -165,7 +165,7 @@ private:
  * - `foreach_fanin`
  * - `node_function`
  * - `foreach_po`
- * 
+ *
  * **Required network functions for return value (type NtkDest):**
  * - `get_constant`
  * - `create_pi`

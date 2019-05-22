@@ -1,5 +1,5 @@
 /* mockturtle: C++ logic network library
- * Copyright (C) 2018  EPFL
+ * Copyright (C) 2018-2019  EPFL
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -81,11 +81,11 @@ struct xag_npn_resynthesis_stats
  * 4.
  *
    \verbatim embed:rst
-  
+
    Example
-   
+
    .. code-block:: c++
-   
+
       const aig_network aig = ...;
       xag_npn_resynthesis<aig_network> resyn;
       cut_rewriting( aig, resyn );

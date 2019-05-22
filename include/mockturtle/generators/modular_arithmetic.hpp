@@ -1,5 +1,5 @@
 /* mockturtle: C++ logic network library
- * Copyright (C) 2018  EPFL
+ * Copyright (C) 2018-2019  EPFL
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -195,7 +195,7 @@ inline void modular_subtractor_inplace( Ntk& ntk, std::vector<signal<Ntk>>& a, s
  * Given two inputs words of the same size *k*, this function creates a circuit
  * that computes *k* output signals that represent \f$(ab) \bmod (2^k - c)\f$.
  * The first input word `a` is overriden and stores the output signals.
- * 
+ *
  * The implementation is based on Montgomery multiplication and includes the
  * encoding and decoding in and from the Montgomery number representation.
  * Correct functionality is only ensured if both `a` and `b` are smaller than

@@ -1,5 +1,5 @@
 /* mockturtle: C++ logic network library
- * Copyright (C) 2018  EPFL
+ * Copyright (C) 2018-2019  EPFL
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -63,6 +63,9 @@ struct cut_enumeration_params
 
   /*! \brief Maximum number of cuts for a node. */
   uint32_t cut_limit{25u};
+
+  /*! \brief Maximum number of fan-ins for a node. */
+  uint32_t fanin_limit{10u};
 
   /*! \brief Prune cuts by removing don't cares. */
   bool minimize_truth_table{false};
@@ -450,9 +453,9 @@ private:
     const auto fanin = cut_sizes.size();
     lcuts[fanin] = &cuts.cuts( index );
 
-    auto& rcuts = *lcuts[fanin == 1 ? 0 : fanin];
+    auto& rcuts = *lcuts[fanin];
 
-    if ( fanin > 1 )
+    if ( fanin > 1 && fanin <= ps.fanin_limit )
     {
       rcuts.clear();
 
@@ -502,14 +505,29 @@ private:
 
       /* limit the maximum number of cuts */
       rcuts.limit( ps.cut_limit - 1 );
+    } else if ( fanin == 1 ) {
+      rcuts.clear();
+
+      for ( auto const& cut : *lcuts[0] ) {
+        cut_t new_cut = *cut;
+
+        if constexpr ( ComputeTruth )
+        {
+          new_cut->func_id = compute_truth_table( index, {cut}, new_cut );
+        }
+
+        cut_enumeration_update_cut<CutData>::apply( new_cut, cuts, ntk, ntk.index_to_node( index ) );
+
+        rcuts.insert( new_cut );
+      }
+
+      /* limit the maximum number of cuts */
+      rcuts.limit( ps.cut_limit - 1 );
     }
 
     cuts._total_cuts += static_cast<uint32_t>( rcuts.size() );
 
-    if ( fanin == 1 || rcuts.size() > 1 || ( *rcuts.begin() )->size() > 1 )
-    {
-      cuts.add_unit_cut( index );
-    }
+    cuts.add_unit_cut( index );
   }
 
 private:

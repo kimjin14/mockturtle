@@ -1,5 +1,5 @@
 /* mockturtle: C++ logic network library
- * Copyright (C) 2018  EPFL
+ * Copyright (C) 2018-2019  EPFL
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -35,15 +35,19 @@
 #include <cstdint>
 #include <iomanip>
 #include <iostream>
+#include <optional>
 #include <set>
+#include <type_traits>
 #include <vector>
 
+#include "../networks/klut.hpp"
 #include "../networks/mig.hpp"
 #include "../traits.hpp"
 #include "../utils/node_map.hpp"
 #include "../utils/progress_bar.hpp"
 #include "../utils/stopwatch.hpp"
 #include "../views/cut_view.hpp"
+#include "../views/fanout_view2.hpp"
 #include "cut_enumeration.hpp"
 #include "detail/mffc_utils.hpp"
 #include "dont_cares.hpp"
@@ -83,6 +87,12 @@ struct cut_rewriting_params
     minimize_weight,
     greedy
   } candidate_selection_strategy = minimize_weight;
+
+  /*! \brief Minimum candidate cut size */
+  uint32_t min_cand_cut_size{3u};
+
+  /*! \brief Minimum candidate cut size override (in conflict graph) */
+  std::optional<uint32_t> min_cand_cut_size_override{};
 
   /*! \brief Show progress. */
   bool progress{false};
@@ -269,7 +279,7 @@ struct cut_enumeration_cut_rewriting_cut
 };
 
 template<typename Ntk, bool ComputeTruth>
-std::tuple<graph, std::vector<std::pair<node<Ntk>, uint32_t>>> network_cuts_graph( Ntk const& ntk, network_cuts<Ntk, ComputeTruth, cut_enumeration_cut_rewriting_cut> const& cuts, bool allow_zero_gain )
+std::tuple<graph, std::vector<std::pair<node<Ntk>, uint32_t>>> network_cuts_graph( Ntk const& ntk, network_cuts<Ntk, ComputeTruth, cut_enumeration_cut_rewriting_cut> const& cuts, cut_rewriting_params const& ps )
 {
   static_assert( is_network_type_v<Ntk>, "Ntk is not a network type" );
   static_assert( has_size_v<Ntk>, "Ntk does not implement the size method" );
@@ -297,10 +307,15 @@ std::tuple<graph, std::vector<std::pair<node<Ntk>, uint32_t>>> network_cuts_grap
     auto cctr{0u};
     for ( auto const& cut : set )
     {
-      if ( cut->size() <= 2 )
+      if ( ps.min_cand_cut_size_override )
+      {
+        if ( cut->size() < *ps.min_cand_cut_size_override )
+          continue;
+      }
+      else if ( cut->size() < ps.min_cand_cut_size )
         continue;
 
-      if ( ( *cut )->data.gain < ( allow_zero_gain ? 0 : 1 ) )
+      if ( ( *cut )->data.gain < ( ps.allow_zero_gain ? 0 : 1 ) )
         continue;
 
       std::vector<node<Ntk>> leaves;
@@ -423,7 +438,7 @@ public:
       for ( auto& cut : cuts.cuts( ntk.node_to_index( n ) ) )
       {
         /* skip trivial cuts */
-        if ( cut->size() <= 2 )
+        if ( cut->size() < ps.min_cand_cut_size )
           continue;
 
         const auto tt = cuts.truth_table( *cut );
@@ -499,7 +514,7 @@ public:
     } );
 
     stopwatch t2( st.time_mis );
-    auto [g, map] = network_cuts_graph( ntk, cuts, ps.allow_zero_gain );
+    auto [g, map] = network_cuts_graph( ntk, cuts, ps );
 
     if ( ps.very_verbose )
     {
@@ -623,7 +638,7 @@ private:
  * some rewriting algorithms in the folder
  * `mockturtle/algorithms/node_resyntesis`, since the resynthesis functions
  * have the same signature.
- * 
+ *
  * In contrast to node resynthesis, cut rewriting uses the same type for the
  * input and output network.  Consequently, the algorithm does not return a
  * new network but applies changes in-place to the input network.
@@ -668,8 +683,19 @@ void cut_rewriting( Ntk& ntk, RewritingFn&& rewriting_fn, cut_rewriting_params c
   static_assert( has_make_signal_v<Ntk>, "Ntk does not implement the make_signal method" );
 
   cut_rewriting_stats st;
-  detail::cut_rewriting_impl<Ntk, RewritingFn, NodeCostFn> p( ntk, rewriting_fn, ps, st, cost_fn );
-  p.run();
+  if constexpr ( std::is_same_v<typename Ntk::base_type, klut_network> )
+  {
+    detail::cut_rewriting_impl<Ntk, RewritingFn, NodeCostFn> p( ntk, rewriting_fn, ps, st, cost_fn );
+    p.run();
+  }
+  else
+  {
+    fanout_view2_params fvps;
+    fvps.update_on_delete = false;
+    fanout_view2<Ntk> ntk_fo{ntk, fvps};
+    detail::cut_rewriting_impl<fanout_view2<Ntk>, RewritingFn, NodeCostFn> p( ntk_fo, rewriting_fn, ps, st, cost_fn );
+    p.run();
+  }
 
   if ( ps.verbose )
   {
