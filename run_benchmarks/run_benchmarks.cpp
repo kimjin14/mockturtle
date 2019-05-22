@@ -15,6 +15,7 @@
 #include <mockturtle/algorithms/collapse_mapped.hpp>
 #include <mockturtle/networks/mig.hpp>
 #include <mockturtle/networks/klut.hpp>
+#include <mockturtle/algorithms/equivalence_checking.hpp>
 
 #include <kitty/kitty.hpp>
 
@@ -60,6 +61,8 @@ int main (int argc, char *argv[]){
 
   auto const& klut = *klut_opt;
 
+  const auto miter = *miter<klut_network> (klut_opt, klut_opt);
+
  /* klut.foreach_gate([&](auto n) {
     if (klut.is_carry(n)) {
       std::cout << "carry ";
@@ -74,6 +77,8 @@ int main (int argc, char *argv[]){
   carry_depth_view depth_klut { klut }; 
 
   std::cout << klut.num_gates() << "," << float(depth_klut.depth()/7.0);
+  //std::cout << klut.size() << "," << float(depth_klut.depth()/7.0);
+
   mig.clear_values();
 
   std::cout << "\n";
