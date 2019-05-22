@@ -165,7 +165,6 @@ public:
       std::vector<signal<NtkDest>> children;
       ntk.foreach_cell_fanin( n, [&]( auto fanin ) {
         children.push_back( node_to_signal[fanin] );
-        //std::cout << fanin << " ";
       } );
 
       switch ( node_driver_type[n] )
@@ -186,14 +185,12 @@ public:
         break;
       }
 
+    //  std::cout << n << " -> " << node_to_signal[n] << "\n";
+
       // Take the created node and create a carry signal with it
       // Has to be completed after create_node
-      //std::cout << n << " -> " << node_to_signal[n] << "\n";
       if (ntk.is_carry(n)) {
-        //std::cout << "\t\tThis one is a carry, making it into output " << n ;
         dest.create_carry (node_to_signal[n]);
-        //dest.create_po(node_to_signal[n]);
-        //std::cout << "\n";
       }
 
     } );

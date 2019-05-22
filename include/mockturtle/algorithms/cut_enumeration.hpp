@@ -153,13 +153,13 @@ template<typename Ntk, bool ComputeTruth, typename CutData>
 struct network_cuts
 {
 public:
-  static constexpr uint32_t max_cut_num = 26;
+  static constexpr uint32_t max_cut_num = 100;
   using cut_t = cut_type<ComputeTruth, CutData>;
   using cut_set_t = cut_set<cut_t, max_cut_num>;
   static constexpr bool compute_truth = ComputeTruth;
 
 private:
-  explicit network_cuts( uint32_t size ) : _cuts( size )
+  explicit network_cuts( uint32_t size ) : _cuts( size ), _num_nodes( size)
   {
     kitty::dynamic_truth_table zero( 0u ), proj( 1u );
     kitty::create_nth_var( proj, 0u );
@@ -169,6 +169,17 @@ private:
   }
 
 public:
+
+  std::vector<uint32_t>& num_nodes ( uint32_t index) {
+  
+    return _num_nodes[index];
+  }
+
+  void add_num_nodes ( uint32_t index, uint32_t count ) {
+    _num_nodes[index].push_back(count);
+
+  }
+
   /*! \brief Returns the cut set of a node */
   cut_set_t& cuts( uint32_t node_index ) { return _cuts[node_index]; }
 
@@ -266,6 +277,8 @@ private:
   /* compressed representation of cuts */
   std::vector<cut_set_t> _cuts;
 
+  std::vector<std::vector<uint32_t>> _num_nodes;
+
   /* cut truth tables */
   truth_table_cache<kitty::dynamic_truth_table> _truth_tables;
 
@@ -327,8 +340,8 @@ public:
       }
     } );
   }
-
 private:
+
   uint32_t compute_truth_table( uint32_t index, std::vector<cut_t const*> const& vcuts, cut_t& res )
   {
     stopwatch t( st.time_truth_table );
