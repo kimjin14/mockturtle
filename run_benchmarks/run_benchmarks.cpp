@@ -10,12 +10,13 @@
 #include <mockturtle/views/carry_depth_view.hpp>
 #include <mockturtle/io/verilog_reader.hpp>
 #include <mockturtle/io/write_verilog.hpp>
-//#include <mockturtle/algorithms/lut_mapping.hpp>
+#include <mockturtle/algorithms/lut_mapping.hpp>
 #include <mockturtle/algorithms/carry_lut_mapping.hpp>
 #include <mockturtle/algorithms/collapse_mapped.hpp>
 #include <mockturtle/networks/mig.hpp>
 #include <mockturtle/networks/klut.hpp>
 #include <mockturtle/algorithms/equivalence_checking.hpp>
+#include <mockturtle/algorithms/miter.hpp>
 
 #include <kitty/kitty.hpp>
 
@@ -33,57 +34,57 @@ int main (int argc, char *argv[]){
 
   //std::cout << argv[1] << ",";
   
+  /////////////////////////////
   // Read Verilog into a MIG network.
+  /////////////////////////////
   result = lorina::read_verilog(argv[1], verilog_reader(mig) ,&diag);
   if (result != lorina::return_code::success) {
     std::cout << "Parsing Error.\n"; 
   }
-
-  // Use depth_view to report the depth of the MIG network.
   depth_view depth_mig { mig }; 
-  //std::cout << mig.num_gates() << "," << depth_mig.depth() << ",";
- 
-  // Map MIG to 6LUT
+  std::cout << mig.num_gates() << "," << depth_mig.depth() << ",";
+  
+  ///////////////////////////// 
+  // Map MIG to LUT and carry
+  /////////////////////////////
+  mapping_view <mig_network, true> carry_mapped_mig { mig };
+  carry_lut_mapping <mapping_view<mig_network,true>,true> (carry_mapped_mig);  
+  const auto klut_carry_opt = collapse_mapped_network<klut_network>( carry_mapped_mig );
+  if (klut_carry_opt == std::nullopt) {
+    std::cout << "LUT and carry does not have mapping\n";
+    return 0;
+  }
+  auto const& klut_carry = *klut_carry_opt;
+  carry_depth_view depth_klut_carry { klut_carry }; 
+
+  /////////////////////////////
+  // Map MIG to LUT only
+  /////////////////////////////
   mapping_view <mig_network, true> mapped_mig { mig };
-  //carry_lut_mapping (mapped_mig);  
-  carry_lut_mapping <mapping_view<mig_network,true>,false> (mapped_mig);  
-  //lut_mapping <mapping_view<mig_network,true>,true> (mapped_mig); // for storing fcn
-  //lut_mapping (mapped_mig);
-
-  //std::cout << mapped_mig.num_carry_cells() << "," << mapped_mig.num_carry_lut_cells() << ",";
-
-  // Collapse mapped MIG to LUT network
+  lut_mapping <mapping_view<mig_network,true>,true> (mapped_mig); 
   const auto klut_opt = collapse_mapped_network<klut_network>( mapped_mig );
   if (klut_opt == std::nullopt) {
     std::cout << "Does not have mapping\n";
     return 0;
   }
-
   auto const& klut = *klut_opt;
+  depth_view depth_klut { klut }; 
+  
+  /////////////////////////////
+  // Check circuit equivalence.
+  /////////////////////////////
+  /*const auto miter_circuit = miter<klut_network, klut_network, mig_network> (klut_carry, mig);
+  if ( miter_circuit == std::nullopt) std::cout << "Input/output numbers do not match.\n";
+  const auto result_of_equivalence = equivalence_checking ( *miter_circuit );
+  if ( !result_of_equivalence || ! *result_of_equivalence ) {
+    std::cout << "Networks are different.\n";
+    return 0;
+  }*/
 
-  const auto miter = *miter<klut_network> (klut_opt, klut_opt);
-
- /* klut.foreach_gate([&](auto n) {
-    if (klut.is_carry(n)) {
-      std::cout << "carry ";
-    } else {
-      std::cout << "regular ";
-    }
-    std::cout << n << ":";
-    kitty::print_hex(klut.node_function(n));
-    std::cout << "\n";
-  });*/
-
-  carry_depth_view depth_klut { klut }; 
-
-  std::cout << klut.num_gates() << "," << float(depth_klut.depth()/7.0);
-  //std::cout << klut.size() << "," << float(depth_klut.depth()/7.0);
+  std::cout << klut.num_gates() << "," << depth_klut.depth() << ",";
+  std::cout << klut_carry.num_gates() << "," << float(depth_klut_carry.depth()/7.0) << "\n";
 
   mig.clear_values();
-
-  std::cout << "\n";
-
-  //write_verilog(klut, "test.v");
 
   return 0;
 
