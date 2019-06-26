@@ -29,6 +29,7 @@ int main (int argc, char *argv[]){
   //std::cout << "benchmark,nMIG,dMIG,n6LUT,d6LUT\n";
 
   mig_network mig;
+  mig_network mig_original;
   lorina::diagnostic_engine diag;
   lorina::return_code result;
 
@@ -41,8 +42,13 @@ int main (int argc, char *argv[]){
   if (result != lorina::return_code::success) {
     std::cout << "Parsing Error.\n"; 
   }
+  result = lorina::read_verilog(argv[1], verilog_reader(mig_original) ,&diag);
+  if (result != lorina::return_code::success) {
+    std::cout << "Parsing Error.\n"; 
+  }
+
   depth_view depth_mig { mig }; 
-  std::cout << mig.num_gates() << "," << depth_mig.depth() << ",";
+  //std::cout << mig.num_gates() << "," << depth_mig.depth() << ",";
   
   ///////////////////////////// 
   // Map MIG to LUT and carry
@@ -56,11 +62,12 @@ int main (int argc, char *argv[]){
   }
   auto const& klut_carry = *klut_carry_opt;
   carry_depth_view depth_klut_carry { klut_carry }; 
+  std::cout << "lut mapping finished\n";
 
   /////////////////////////////
   // Map MIG to LUT only
   /////////////////////////////
-  mapping_view <mig_network, true> mapped_mig { mig };
+  /*mapping_view <mig_network, true> mapped_mig { mig };
   lut_mapping <mapping_view<mig_network,true>,true> (mapped_mig); 
   const auto klut_opt = collapse_mapped_network<klut_network>( mapped_mig );
   if (klut_opt == std::nullopt) {
@@ -69,19 +76,21 @@ int main (int argc, char *argv[]){
   }
   auto const& klut = *klut_opt;
   depth_view depth_klut { klut }; 
-  
+  */
+
   /////////////////////////////
   // Check circuit equivalence.
   /////////////////////////////
-  /*const auto miter_circuit = miter<klut_network, klut_network, mig_network> (klut_carry, mig);
+  //const auto miter_circuit = miter<mig_network, mig_network, mig_network> (mig, mig_original);
+  const auto miter_circuit = miter<klut_network, klut_network, mig_network> (klut_carry, mig_original);
   if ( miter_circuit == std::nullopt) std::cout << "Input/output numbers do not match.\n";
   const auto result_of_equivalence = equivalence_checking ( *miter_circuit );
   if ( !result_of_equivalence || ! *result_of_equivalence ) {
     std::cout << "Networks are different.\n";
     return 0;
-  }*/
+  }
 
-  std::cout << klut.num_gates() << "," << depth_klut.depth() << ",";
+  //std::cout << klut.num_gates() << "," << depth_klut.depth() << ",";
   std::cout << klut_carry.num_gates() << "," << float(depth_klut_carry.depth()/7.0) << "\n";
 
   mig.clear_values();

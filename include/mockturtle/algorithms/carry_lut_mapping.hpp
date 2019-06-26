@@ -59,7 +59,7 @@ struct carry_lut_mapping_params
   bool carry_mapping{true};
 
   /*! \brief Number of rounds for carry chain synthesis. */
-  uint32_t rounds_carry{4u};  
+  uint32_t rounds_carry{6u};  
   
 };
 
@@ -137,34 +137,41 @@ public:
       set_mapping_refs<false>();
       compute_mapping<false>();
       delay_lut = delay;
-    
+      int count = 0;  
       for (int i = 0; i < int((ps.rounds_carry-2)/2); i++) { 
 
         //std::cout << "Carry Mapping Iteration " << i << " targetting delay of " << delay_lut << "\n";
 
+        /////////////////////////////////////////////////
         // Find path
         // 1) Find the longest chain starting from PO
         // find_critical_paths(path_for_carry);
         // 2) Find the path on deepest LUT chain 
         find_critical_LUT_chain (path_for_carry);
-        remove_inverter_from_path ();
+
+        ////////////////////////////////////////////////
+        // Remove inverters in its path
+        remove_inverter(path_for_carry);
+        //remove_inverter_from_path (path_for_carry, count);
+        //print_inverter_from_path ();
         cuts = cut_enumeration<Ntk, StoreFunction, CutData>( ntk, ps.cut_enumeration_ps ); 
         //print_path (path_for_carry);
 
+        ////////////////////////////////////////////////
         // Compute carry LUT mappgin
         //map_carry_lut_with_node(path_for_carry);
         compute_carry_mapping(path_for_carry);
-        path_for_carry.clear();
-
         set_mapping_refs<false>();
         compute_mapping<false>();
-        //print_state();
-        //print_carry_lut_nodes();
+
+        ////////////////////////////////////////////////
+        // Clear path 
+        path_for_carry.clear();
       }
     }    
 
     //std::cout << "LUT mapping starts.\n";
-    //set_mapping_refs<false>();
+    set_mapping_refs<false>();
 
     while ( iteration < ps.rounds + ps.rounds_carry )
     {
@@ -180,6 +187,7 @@ public:
     //std::cout << "Mapping derivation starts.\n";
     
     //print_state();
+    //check_inverter();
     derive_mapping();
   }
 
@@ -326,28 +334,87 @@ private:
     bool should_complement_node = false;
     ntk.foreach_fanin( n, [&]( auto const& f ) {
       node<Ntk> child_node = ntk.get_node(f);  
+      std::cout << "\t  child " << child_node << " " << ntk.is_complemented(f) << "\n";
       if ( !ntk.is_pi(child_node) && is_a_carry_node(child_node) ) {
-        std::cout << "\t  child " << child_node << " " << ntk.is_complemented(f) << "\n";
         should_complement_node = ntk.is_complemented(f);
       }
     });
+
 
     for (uint32_t i = 0; i < ntk.fanin_size(n); i++) {
       node<Ntk> child_node = ntk.get_children(n,i);  
       if (should_complement_node) {
         std::cout << "\t\tflipping " << child_node << "\n";
         ntk.flip_children(n, i);
-        //if (ntk.is_constant( child_node ))
-        //  std::cout << "\t\t\t" << child_node << " " << ntk.is_complemented_children(n,i) << "\n";
       }
     }
+    if (should_complement_node) {
+      //auto children_nodes = ordered_children(n); 
+      //auto maj_node = ntk.create_maj(children_nodes[0], children_nodes[1], children_nodes[2]);
+      //ntk.substitute_node( n, maj_node);
+      
+    }
     return should_complement_node;
+  }
+
+  // If the node is a carry, check its carry child for inversion
+  void check_inverter ( ) {
+    ntk.foreach_node( [&]( auto n, auto ) {
+      if (is_a_carry_node(n)) {
+        for (uint32_t i = 0; i < ntk.fanin_size(n); i++) {
+          node<Ntk> child_node = ntk.get_children(n,i);  
+          
+          if(is_a_carry_node(child_node)) {
+            if (ntk.is_complemented_children(n,i)) 
+              assert(0);
+          }
+        } 
+      }
+    });
+  }
+
+  void remove_inverter ( std::vector<node<Ntk>>& path_for_carry ) {
+    for (auto carry_node: path_for_carry) {
+      bool complemented_carry_edge = false;
+      for (uint32_t i = 0; i < ntk.fanin_size(carry_node); i++) {
+        node<Ntk> child_node = ntk.get_children(carry_node,i);  
+        if (is_a_carry_node(child_node) && ntk.is_complemented_children(carry_node,i))
+          complemented_carry_edge = true;
+      }
+
+      // If the carry path is complemented, go through all the nodes
+      // and flip its children that match this node and the node itself
+      if (complemented_carry_edge) {
+        // flip children
+        for (uint32_t i = 0; i < ntk.fanin_size(carry_node); i++) {
+          node<Ntk> child_node = ntk.get_children(carry_node,i);  
+          //std::cout << "\t\tflipping child " << child_node << "\n";
+          ntk.flip_children(carry_node, i);
+        }
+        ntk.foreach_node( [&]( auto n, auto ) {
+          for (uint32_t i = 0; i < ntk.fanin_size(n); i++) {
+            if (ntk.get_children(n,i) == carry_node) {
+              //std::cout << "\t\tflipping child driver " << n << "\n";
+              ntk.flip_children(n, i);
+
+            }
+          }
+        });
+        ntk.foreach_po( [&]( auto const& s ) {
+          if (ntk.get_node(s) == carry_node) {
+            //std::cout << "\t\tflipping child driver " << ntk.get_node(s) << "\n";
+            ntk.flip_complement_output(s);
+          }
+        });
+
+      }
+    }
   }
 
   // Recursively go to the last child node
   // then check if the children should flip
   // if children should flip, flip itself when it returns
-  bool remove_inverter_from_path_rec ( node<Ntk> n ) {
+  bool remove_inverter_from_path_rec ( node<Ntk> n, int& count ) {
 
     bool carry_child_complement = false;
     node<Ntk> carry_child_node = n;
@@ -359,20 +426,36 @@ private:
       // Check if the child carry node is complemented
       // child_complemented indicates whether it is
       if ( !ntk.is_pi(child_node) && is_a_carry_node(child_node) ) {
-        if (remove_inverter_from_path_rec ( child_node )) {
+        if (remove_inverter_from_path_rec ( child_node,count )) {
           std::cout << "\t\tflipping " << child_node << "*\n";
           ntk.flip_children(n, i);
         }
-        //std::cout << "\t\tcomplemented " << carry_child_complement << "\n";
       }
     }
 
-    std::cout << "\tBack to Node " << n << "\n";
+    std::cout << "\tBack to Node " << n << "(" << count << ")\n";
+    count++;
+    if (count > 3) return false;
+    print_inverter_from_path();
 
     return check_and_flip_nodes ( n );
   }
 
-  void remove_inverter_from_path (void) {
+
+  void print_inverter_from_path (void) {
+
+    //for (auto n: path_for_carry) {
+    ntk.foreach_node( [this]( auto n, auto ) {
+      std::cout << n << ":"; 
+      for (uint32_t i = 0; i < ntk.fanin_size(n); i++) {
+        node<Ntk> child_node = ntk.get_children(n,i);  
+        std::cout << "  " << child_node << "(" << ntk.is_complemented_children(n,i) << ") ";
+      }
+      std::cout << "\n";
+    });
+  }
+
+  void remove_inverter_from_path (std::vector<node<Ntk>>& path_for_carry, int& count) {
 
     // Starting from PO, if its carry, look at its children
     ntk.foreach_po( [&]( auto const& s ) {
@@ -384,7 +467,7 @@ private:
         // Testing which node should flip
         std::cout << "\tStarting node " << node << "\n";
 
-        if (remove_inverter_from_path_rec(node)) {
+        if (remove_inverter_from_path_rec(node, count)) {
           ntk.flip_complement_output(s);
         }
       }
@@ -1500,6 +1583,14 @@ private:
     }
   }
 */
+
+  std::array<signal<Ntk>, 3> ordered_children( node<Ntk> const& n ) const
+  {
+    std::array<signal<Ntk>, 3> children;
+    ntk.foreach_fanin( n, [&children]( auto const& f, auto i ) { children[i] = f; } );
+    return children;
+  }
+
   void derive_mapping()
   {
     ntk.clear_mapping();
