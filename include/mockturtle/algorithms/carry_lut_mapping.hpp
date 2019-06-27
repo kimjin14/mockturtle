@@ -59,7 +59,7 @@ struct carry_lut_mapping_params
   bool carry_mapping{true};
 
   /*! \brief Number of rounds for carry chain synthesis. */
-  uint32_t rounds_carry{6u};  
+  uint32_t rounds_carry{4u};  
   
 };
 
@@ -112,6 +112,7 @@ public:
         delays( ntk.size() ),
         carry_cut_list( ntk.size() ),
         carry_nodes( ntk.size(), 0),
+        carry_list(ps.rounds_carry),
         cuts( cut_enumeration<Ntk, StoreFunction, CutData>( ntk, ps.cut_enumeration_ps ) )
   {
     carry_lut_mapping_update_cuts<CutData>().apply( cuts, ntk );
@@ -148,6 +149,7 @@ public:
         // find_critical_paths(path_for_carry);
         // 2) Find the path on deepest LUT chain 
         find_critical_LUT_chain (path_for_carry);
+        carry_list.push_back(path_for_carry);
 
         ////////////////////////////////////////////////
         // Remove inverters in its path
@@ -187,7 +189,7 @@ public:
     //std::cout << "Mapping derivation starts.\n";
     
     //print_state();
-    //check_inverter();
+    check_inverter();
     derive_mapping();
   }
 
@@ -328,7 +330,7 @@ private:
       }
     }
   }
-
+/*
   bool check_and_flip_nodes( node<Ntk> n ) {
 
     bool should_complement_node = false;
@@ -356,21 +358,50 @@ private:
     }
     return should_complement_node;
   }
-
+*/
   // If the node is a carry, check its carry child for inversion
-  void check_inverter ( ) {
-    ntk.foreach_node( [&]( auto n, auto ) {
-      if (is_a_carry_node(n)) {
+  void check_inverter (void) {
+
+    for (auto carry_path: carry_list) {
+      for (uint32_t carry_i = 1; carry_i < carry_path.size(); carry_i++) {
+
+        auto n = carry_path[carry_i];
+        auto n_carry = carry_path[carry_i-1];
+
+        //std::cout << "node " << n << ": ";
         for (uint32_t i = 0; i < ntk.fanin_size(n); i++) {
+
           node<Ntk> child_node = ntk.get_children(n,i);  
-          
-          if(is_a_carry_node(child_node)) {
+          //std::cout << child_node << "(" << ntk.is_complemented_children(n,i) << ")";
+          if(child_node == n_carry) {
+            //std::cout << "*";
             if (ntk.is_complemented_children(n,i)) 
               assert(0);
           }
+          //std::cout << " ";
         } 
+        //std::cout << "\n";
+      }
+    } 
+
+/*
+    ntk.foreach_node( [&]( auto n, auto ) {
+      if (is_a_carry_node(n)) {
+        std::cout << "node " << n << ": ";
+        for (uint32_t i = 0; i < ntk.fanin_size(n); i++) {
+          node<Ntk> child_node = ntk.get_children(n,i);  
+          std::cout << child_node << "(" << ntk.is_complemented_children(n,i) << ")";
+          if(is_a_carry_node(child_node)) {
+            std::cout << "*";
+            if (ntk.is_complemented_children(n,i)) 
+              assert(0);
+          }
+          std::cout << " ";
+        } 
+        std::cout << "\n";
       }
     });
+*/
   }
 
   void remove_inverter ( std::vector<node<Ntk>>& path_for_carry ) {
@@ -414,7 +445,7 @@ private:
   // Recursively go to the last child node
   // then check if the children should flip
   // if children should flip, flip itself when it returns
-  bool remove_inverter_from_path_rec ( node<Ntk> n, int& count ) {
+  /*bool remove_inverter_from_path_rec ( node<Ntk> n, int& count ) {
 
     bool carry_child_complement = false;
     node<Ntk> carry_child_node = n;
@@ -440,7 +471,7 @@ private:
 
     return check_and_flip_nodes ( n );
   }
-
+*/
 
   void print_inverter_from_path (void) {
 
@@ -454,7 +485,7 @@ private:
       std::cout << "\n";
     });
   }
-
+/*
   void remove_inverter_from_path (std::vector<node<Ntk>>& path_for_carry, int& count) {
 
     // Starting from PO, if its carry, look at its children
@@ -474,7 +505,7 @@ private:
     } );
     std::cout << "END\n";
   }
-
+*/
   void init_nodes()
   {
     ntk.foreach_node( [this]( auto n, auto ) {
@@ -1694,6 +1725,7 @@ private:
   std::vector<uint32_t> delays;
   std::vector<std::vector<uint32_t>> carry_cut_list;
   std::vector<node<Ntk>> carry_nodes;
+  std::vector<std::vector<node<Ntk>>> carry_list;
   network_cuts_t cuts;
 
   std::vector<uint32_t> tmp_area; /* temporary vector to compute exact area */
