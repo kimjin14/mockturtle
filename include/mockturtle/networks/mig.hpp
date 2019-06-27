@@ -301,7 +301,7 @@ public:
       b.complement = !b.complement;
       c.complement = !c.complement;
     }
-
+    
     storage::element_type::node_type node;
     node.children[0] = a;
     node.children[1] = b;
@@ -751,9 +751,47 @@ public:
     return signal( n, 0 );
   }
 
+  bool is_complemented_children( node const& n, uint32_t i) const
+  {
+    assert(i < fanin_size(n));
+    return _storage->nodes[n].children[i].weight;
+  }
+
   bool is_complemented( signal const& f ) const
   {
     return f.complement;
+  }
+
+
+  void flip_complement ( signal const& f ) {
+
+    signal& t = const_cast<signal&> (f);
+
+    if (t.complement == true) {
+      t.complement = false;
+    }
+    else {
+      t.complement = true;
+    }
+  }
+
+  void flip_children (node const& n, uint32_t i) const
+  {
+    assert(i < fanin_size(n));
+    _storage->nodes[n].children[i].weight = !_storage->nodes[n].children[i].weight;
+  }
+
+  void flip_complement_output ( mig_storage::node_type::pointer_type const& p ) {
+
+   
+    mig_storage::node_type::pointer_type& t = const_cast<mig_storage::node_type::pointer_type&> (p);
+
+    if (t.weight == true) {
+      t.weight = false;
+    }
+    else {
+      t.weight = true;
+    }
   }
 
   uint32_t node_to_index( node const& n ) const
