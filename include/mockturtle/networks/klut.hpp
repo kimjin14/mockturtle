@@ -34,6 +34,7 @@
 #pragma once
 
 #include "../traits.hpp"
+#include "../utils/algorithm.hpp"
 #include "../utils/truth_table_cache.hpp"
 #include "detail/foreach.hpp"
 #include "events.hpp"
@@ -122,8 +123,8 @@ private:
     _storage->data.cache.insert( tt_and );
 
     /* truth tables for constants */
-    _storage->nodes[0].data[1].h1 = 0;
-    _storage->nodes[1].data[1].h1 = 1;
+    static uint64_t _or = 0x7;
+    kitty::dynamic_truth_table tt_or( 2 );
     kitty::create_from_words( tt_or, &_or, &_or + 1 );
     _storage->data.cache.insert( tt_or );
 
@@ -403,6 +404,102 @@ signal create_maj( signal a, signal b, signal c )
   }
 
   auto num_gates() const
+  {
+    return static_cast<uint32_t>(_storage->nodes.size() - _storage->inputs.size() - 2 \
+       - ceil(_carry_nodes.size()/2));
+  }
+
+  uint32_t fanin_size( node const& n ) const
+  {
+    return static_cast<uint32_t>( _storage->nodes[n].children.size() );
+  }
+
+  uint32_t fanout_size( node const& n ) const
+  {
+    return _storage->nodes[n].data[0].h1;
+  }
+#pragma endregion
+
+#pragma region Functional properties
+  kitty::dynamic_truth_table node_function( const node& n ) const
+  {
+    return _storage->data.cache[_storage->nodes[n].data[1].h1];
+  }
+#pragma endregion
+
+#pragma region Nodes and signals
+  node get_node( signal const& f ) const
+  {
+    return f;
+  }
+
+  signal make_signal( node const& n ) const
+  {
+    return n;
+  }
+
+  bool is_complemented( signal const& f ) const
+  {
+    (void)f;
+    return false;
+  }
+
+  uint32_t node_to_index( node const& n ) const
+  {
+    return static_cast<uint32_t>( n );
+  }
+
+  node index_to_node( uint32_t index ) const
+  {
+    return index;
+  }
+#pragma endregion
+
+#pragma region Node and signal iterators
+  template<typename Fn>
+  void foreach_node( Fn&& fn ) const
+  {
+    detail::foreach_element( ez::make_direct_iterator<uint64_t>( 0 ),
+                             ez::make_direct_iterator<uint64_t>( _storage->nodes.size() ),
+                             fn );
+  }
+
+  template<typename Fn>
+  void foreach_pi( Fn&& fn ) const
+  {
+    detail::foreach_element( _storage->inputs.begin(), _storage->inputs.end(), fn );
+  }
+
+  template<typename Fn>
+  void foreach_po( Fn&& fn ) const
+  {
+    using IteratorType = decltype( _storage->outputs.begin() );
+    detail::foreach_element_transform<IteratorType, uint32_t>( _storage->outputs.begin(), _storage->outputs.end(), []( auto o ) { return o.index; }, fn );
+  }
+
+  template<typename Fn>
+  void foreach_gate( Fn&& fn ) const
+  {
+    detail::foreach_element_if( ez::make_direct_iterator<uint64_t>( 2 ), /* start from 2 to avoid constants */
+                                ez::make_direct_iterator<uint64_t>( _storage->nodes.size() ),
+                                [this]( auto n ) { return !is_pi( n ); },
+                                fn );
+  }
+
+  template<typename Fn>
+  void foreach_fanin( node const& n, Fn&& fn ) const
+  {
+    if ( n == 0 || is_pi( n ) )
+      return;
+
+    using IteratorType = decltype( _storage->outputs.begin() );
+    detail::foreach_element_transform<IteratorType, uint32_t>( _storage->nodes[n].children.begin(), _storage->nodes[n].children.end(), []( auto f ) { return f.index; }, fn );
+  }
+#pragma endregion
+
+#pragma region Simulate values
+  template<typename Iterator>
+  iterates_over_t<Iterator, bool>
   compute( node const& n, Iterator begin, Iterator end ) const
   {
     uint32_t index{0};
