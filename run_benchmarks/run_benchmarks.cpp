@@ -82,16 +82,18 @@ int main (int argc, char *argv[]){
   // Check circuit equivalence.
   /////////////////////////////
   //const auto miter_circuit = miter<mig_network, mig_network, mig_network> (mig, mig_original);
-  const auto miter_circuit = miter<klut_network, klut_network, mig_network> (klut_carry, mig_original);
+  /*const auto miter_circuit = miter<klut_network, klut_network, mig_network> (klut_carry, mig_original);
   if ( miter_circuit == std::nullopt) std::cout << "Input/output numbers do not match.\n";
   const auto result_of_equivalence = equivalence_checking ( *miter_circuit );
   if ( !result_of_equivalence || ! *result_of_equivalence ) {
     std::cout << "Networks are different.\n";
     return 0;
-  }
+  }*/
 
   //std::cout << klut.num_gates() << "," << depth_klut.depth() << ",";
   std::cout << klut_carry.num_gates() << "," << float(depth_klut_carry.depth()/7.0) << "\n";
+
+  //write_verilog(klut_carry, "testing.v");  
 
   mig.clear_values();
 

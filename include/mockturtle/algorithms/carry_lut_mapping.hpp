@@ -59,7 +59,7 @@ struct carry_lut_mapping_params
   bool carry_mapping{true};
 
   /*! \brief Number of rounds for carry chain synthesis. */
-  uint32_t rounds_carry{4u};  
+  uint32_t rounds_carry{2u};  
   
 };
 
@@ -112,7 +112,7 @@ public:
         delays( ntk.size() ),
         carry_cut_list( ntk.size() ),
         carry_nodes( ntk.size(), 0),
-        carry_list(ps.rounds_carry),
+        carry_paths(ps.rounds_carry),
         cuts( cut_enumeration<Ntk, StoreFunction, CutData>( ntk, ps.cut_enumeration_ps ) )
   {
     carry_lut_mapping_update_cuts<CutData>().apply( cuts, ntk );
@@ -137,19 +137,18 @@ public:
       // Initial mapping to LUTs only.
       set_mapping_refs<false>();
       compute_mapping<false>();
+
       delay_lut = delay;
-      int count = 0;  
-      for (int i = 0; i < int((ps.rounds_carry-2)/2); i++) { 
+
+      for (uint32_t i = 0; i < ps.rounds_carry; i++) { 
 
         //std::cout << "Carry Mapping Iteration " << i << " targetting delay of " << delay_lut << "\n";
 
         /////////////////////////////////////////////////
         // Find path
-        // 1) Find the longest chain starting from PO
         // find_critical_paths(path_for_carry);
-        // 2) Find the path on deepest LUT chain 
         find_critical_LUT_chain (path_for_carry);
-        carry_list.push_back(path_for_carry);
+        carry_paths[i] = path_for_carry;
 
         ////////////////////////////////////////////////
         // Remove inverters in its path
@@ -170,17 +169,20 @@ public:
         // Clear path 
         path_for_carry.clear();
       }
+      
+      print_carry_paths();
+
     }    
 
     //std::cout << "LUT mapping starts.\n";
     set_mapping_refs<false>();
 
-    while ( iteration < ps.rounds + ps.rounds_carry )
+    while ( iteration < ps.rounds + (ps.rounds_carry*2 + 2) )
     {
       compute_mapping<false>();
     }
 
-    while ( iteration < ps.rounds + ps.rounds_ela + ps.rounds_carry )
+    while ( iteration < ps.rounds + ps.rounds_ela + (ps.rounds_carry*2 + 2) )
     {
       compute_mapping<true>();
     }
@@ -362,36 +364,18 @@ private:
   // If the node is a carry, check its carry child for inversion
   void check_inverter (void) {
 
-    for (auto carry_path: carry_list) {
+    for (auto carry_path: carry_paths) {
       for (uint32_t carry_i = 1; carry_i < carry_path.size(); carry_i++) {
 
         auto n = carry_path[carry_i];
         auto n_carry = carry_path[carry_i-1];
 
-        //std::cout << "node " << n << ": ";
-        for (uint32_t i = 0; i < ntk.fanin_size(n); i++) {
-
-          node<Ntk> child_node = ntk.get_children(n,i);  
-          //std::cout << child_node << "(" << ntk.is_complemented_children(n,i) << ")";
-          if(child_node == n_carry) {
-            //std::cout << "*";
-            if (ntk.is_complemented_children(n,i)) 
-              assert(0);
-          }
-          //std::cout << " ";
-        } 
-        //std::cout << "\n";
-      }
-    } 
-
-/*
-    ntk.foreach_node( [&]( auto n, auto ) {
-      if (is_a_carry_node(n)) {
         std::cout << "node " << n << ": ";
         for (uint32_t i = 0; i < ntk.fanin_size(n); i++) {
+
           node<Ntk> child_node = ntk.get_children(n,i);  
           std::cout << child_node << "(" << ntk.is_complemented_children(n,i) << ")";
-          if(is_a_carry_node(child_node)) {
+          if(child_node == n_carry) {
             std::cout << "*";
             if (ntk.is_complemented_children(n,i)) 
               assert(0);
@@ -400,8 +384,7 @@ private:
         } 
         std::cout << "\n";
       }
-    });
-*/
+    } 
   }
 
   void remove_inverter ( std::vector<node<Ntk>>& path_for_carry ) {
@@ -419,13 +402,13 @@ private:
         // flip children
         for (uint32_t i = 0; i < ntk.fanin_size(carry_node); i++) {
           node<Ntk> child_node = ntk.get_children(carry_node,i);  
-          //std::cout << "\t\tflipping child " << child_node << "\n";
+          std::cout << "\t\tflipping child " << child_node << "\n";
           ntk.flip_children(carry_node, i);
         }
         ntk.foreach_node( [&]( auto n, auto ) {
           for (uint32_t i = 0; i < ntk.fanin_size(n); i++) {
             if (ntk.get_children(n,i) == carry_node) {
-              //std::cout << "\t\tflipping child driver " << n << "\n";
+              std::cout << "\t\tflipping child driver " << n << "\n";
               ntk.flip_children(n, i);
 
             }
@@ -433,7 +416,7 @@ private:
         });
         ntk.foreach_po( [&]( auto const& s ) {
           if (ntk.get_node(s) == carry_node) {
-            //std::cout << "\t\tflipping child driver " << ntk.get_node(s) << "\n";
+            std::cout << "\t\tflipping child driver " << ntk.get_node(s) << "\n";
             ntk.flip_complement_output(s);
           }
         });
@@ -534,7 +517,18 @@ private:
     }
     std::cout << "\n";
   }
+  void print_carry_paths() {
+    std::cout << "Carry Path ";
+    uint32_t count = 0;
 
+    for (auto carry_path: carry_paths) {
+      std::cout << count << ": ";
+      for (auto const node: carry_path) {
+        std::cout << node << ",";
+      }
+      std::cout << "\n";
+    }
+  }
   void print_path (std::vector<node<Ntk>> path) {
     std::cout << "Path: ";
     for (auto const node: path) {
@@ -640,6 +634,8 @@ private:
   template<bool ELA>
   void set_mapping_refs()
   {
+
+    std::cout << "set_mapping_refs " << iteration << "\n";
     const auto coef = 1.0f / ( 1.0f + ( iteration + 1 ) * ( iteration + 1 ) );
 
     /* compute current delay and update mapping refs */
@@ -1725,7 +1721,7 @@ private:
   std::vector<uint32_t> delays;
   std::vector<std::vector<uint32_t>> carry_cut_list;
   std::vector<node<Ntk>> carry_nodes;
-  std::vector<std::vector<node<Ntk>>> carry_list;
+  std::vector<std::vector<node<Ntk>>> carry_paths;
   network_cuts_t cuts;
 
   std::vector<uint32_t> tmp_area; /* temporary vector to compute exact area */
