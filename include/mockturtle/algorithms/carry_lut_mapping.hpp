@@ -59,7 +59,7 @@ struct carry_lut_mapping_params
   bool carry_mapping{true};
 
   /*! \brief Number of rounds for carry chain synthesis. */
-  uint32_t rounds_carry{2u};  
+  uint32_t rounds_carry{3u};  
   
 };
 
@@ -142,21 +142,19 @@ public:
 
       for (uint32_t i = 0; i < ps.rounds_carry; i++) { 
 
-        //std::cout << "Carry Mapping Iteration " << i << " targetting delay of " << delay_lut << "\n";
+        std::cout << "Carry Mapping Iteration " << i << " targetting delay of " << delay_lut << "\n";
 
         /////////////////////////////////////////////////
         // Find path
         // find_critical_paths(path_for_carry);
         find_critical_LUT_chain (path_for_carry);
+        print_path (path_for_carry);
         carry_paths[i] = path_for_carry;
 
         ////////////////////////////////////////////////
         // Remove inverters in its path
         remove_inverter(path_for_carry);
-        //remove_inverter_from_path (path_for_carry, count);
-        //print_inverter_from_path ();
-        cuts = cut_enumeration<Ntk, StoreFunction, CutData>( ntk, ps.cut_enumeration_ps ); 
-        //print_path (path_for_carry);
+        //cuts = cut_enumeration<Ntk, StoreFunction, CutData>( ntk, ps.cut_enumeration_ps ); 
 
         ////////////////////////////////////////////////
         // Compute carry LUT mappgin
@@ -217,7 +215,7 @@ private:
       auto const leaf = ntk.get_children(n,i);
       auto const leaf_index = ntk.node_to_index(leaf);
       if (!is_a_carry_node(leaf) && !ntk.is_constant(leaf) && ntk.visited(leaf) == 0)
-      found = add_find_longest_path_in_mapping (path_for_carry, leaf_index, dest_index);
+        found = add_find_longest_path_in_mapping (path_for_carry, leaf_index, dest_index);
       if (found) {
         path_for_carry.push_back(leaf);
         carry_nodes[leaf] = 1;
@@ -229,6 +227,7 @@ private:
 
   // Keep going deeper to its fanin until depth is found
   bool find_deepest_LUT (std::vector<node<Ntk>>& path_for_carry, uint32_t index) { 
+    std::cout << "Index " << index << "(" << delays[index] << "):\n " ; 
 
 
     if (delays[index] == 0) {
@@ -243,7 +242,7 @@ private:
     if (is_a_carry_node(ntk.index_to_node(index))) {
       for ( auto leaf : carry_cut_list[index] ) {
         if (!is_a_carry_node(leaf)) { 
-        //std::cout << "carry " << index << "(" << delays[index] << ") -> " << leaf << "(" << delays[leaf] << ")\n"; 
+          std::cout << "\tcarry " << leaf << "(" << delays[leaf] << ")\n"; 
           if (max_delay < delays[leaf]) {
             max_leaf = leaf;
             max_delay = delays[leaf];
@@ -252,9 +251,8 @@ private:
       }
     } else {
       for ( auto leaf : cuts.cuts( index )[0] ){
-
         if (!is_a_carry_node(leaf)) { 
-        //std::cout << "Reg " << index << "(" << delays[index] << ") -> " << leaf << "(" << delays[leaf] << ")\n"; 
+          std::cout << "\t\treg " << leaf << "(" << delays[leaf] << ")\n"; 
           if (max_delay <= delays[leaf]) {
             max_leaf = leaf;
             max_delay = delays[leaf];
@@ -263,10 +261,18 @@ private:
       }
     }
 
-    deepest = find_deepest_LUT(path_for_carry, max_leaf);
-    if (deepest)  {
-      ntk.clear_visited();
-      add_find_longest_path_in_mapping(path_for_carry, index, max_leaf); 
+    if (max_leaf != index) {
+      deepest = find_deepest_LUT(path_for_carry, max_leaf);
+      if (deepest)  {
+        ntk.clear_visited();
+        std::cout << index << " to " << max_leaf << "\n";
+        if(add_find_longest_path_in_mapping(path_for_carry, index, max_leaf)) {
+          std::cout << "add the path\n";
+        } else { //cannot put this in carry
+          std::cout << "what should happen here?\n";
+        } 
+  
+      }
     }
     return deepest;
   }
@@ -279,7 +285,7 @@ private:
     for ( auto it = top_order.rbegin(); it != top_order.rend(); ++it ) {
       const auto index = ntk.node_to_index( *it );
       if (delays[index] == delay_lut) {
-        //std::cout << "\nFound target index " << index << "\n";
+        std::cout << "\nFound target index " << index << "\n";
         find_deepest_LUT(path_for_carry,index);
         path_for_carry.push_back(index);
         carry_nodes[index] = 1;
@@ -332,35 +338,6 @@ private:
       }
     }
   }
-/*
-  bool check_and_flip_nodes( node<Ntk> n ) {
-
-    bool should_complement_node = false;
-    ntk.foreach_fanin( n, [&]( auto const& f ) {
-      node<Ntk> child_node = ntk.get_node(f);  
-      std::cout << "\t  child " << child_node << " " << ntk.is_complemented(f) << "\n";
-      if ( !ntk.is_pi(child_node) && is_a_carry_node(child_node) ) {
-        should_complement_node = ntk.is_complemented(f);
-      }
-    });
-
-
-    for (uint32_t i = 0; i < ntk.fanin_size(n); i++) {
-      node<Ntk> child_node = ntk.get_children(n,i);  
-      if (should_complement_node) {
-        std::cout << "\t\tflipping " << child_node << "\n";
-        ntk.flip_children(n, i);
-      }
-    }
-    if (should_complement_node) {
-      //auto children_nodes = ordered_children(n); 
-      //auto maj_node = ntk.create_maj(children_nodes[0], children_nodes[1], children_nodes[2]);
-      //ntk.substitute_node( n, maj_node);
-      
-    }
-    return should_complement_node;
-  }
-*/
   // If the node is a carry, check its carry child for inversion
   void check_inverter (void) {
 
@@ -388,11 +365,15 @@ private:
   }
 
   void remove_inverter ( std::vector<node<Ntk>>& path_for_carry ) {
-    for (auto carry_node: path_for_carry) {
+    for (uint32_t carry_i = 1; carry_i < path_for_carry.size(); carry_i++) {
+
+      auto carry_node = path_for_carry[carry_i];
+      auto carry_child_node = path_for_carry[carry_i-1];
+      
       bool complemented_carry_edge = false;
       for (uint32_t i = 0; i < ntk.fanin_size(carry_node); i++) {
         node<Ntk> child_node = ntk.get_children(carry_node,i);  
-        if (is_a_carry_node(child_node) && ntk.is_complemented_children(carry_node,i))
+        if (child_node == carry_child_node && ntk.is_complemented_children(carry_node,i))
           complemented_carry_edge = true;
       }
 
@@ -402,13 +383,13 @@ private:
         // flip children
         for (uint32_t i = 0; i < ntk.fanin_size(carry_node); i++) {
           node<Ntk> child_node = ntk.get_children(carry_node,i);  
-          std::cout << "\t\tflipping child " << child_node << "\n";
+          ////std::cout << "\t\tflipping child " << child_node << "\n";
           ntk.flip_children(carry_node, i);
         }
         ntk.foreach_node( [&]( auto n, auto ) {
           for (uint32_t i = 0; i < ntk.fanin_size(n); i++) {
             if (ntk.get_children(n,i) == carry_node) {
-              std::cout << "\t\tflipping child driver " << n << "\n";
+              //std::cout << "\t\tflipping child driver " << n << "\n";
               ntk.flip_children(n, i);
 
             }
@@ -416,7 +397,7 @@ private:
         });
         ntk.foreach_po( [&]( auto const& s ) {
           if (ntk.get_node(s) == carry_node) {
-            std::cout << "\t\tflipping child driver " << ntk.get_node(s) << "\n";
+            //std::cout << "\t\tflipping child driver " << ntk.get_node(s) << "\n";
             ntk.flip_complement_output(s);
           }
         });
@@ -424,37 +405,6 @@ private:
       }
     }
   }
-
-  // Recursively go to the last child node
-  // then check if the children should flip
-  // if children should flip, flip itself when it returns
-  /*bool remove_inverter_from_path_rec ( node<Ntk> n, int& count ) {
-
-    bool carry_child_complement = false;
-    node<Ntk> carry_child_node = n;
-
-    std::cout << "\tNode " << n << "\n";
-    // For each fanin, check if carry child is inverted
-    for (uint32_t i = 0; i < ntk.fanin_size(n); i++) {
-      node<Ntk> child_node = ntk.get_children(n,i);  
-      // Check if the child carry node is complemented
-      // child_complemented indicates whether it is
-      if ( !ntk.is_pi(child_node) && is_a_carry_node(child_node) ) {
-        if (remove_inverter_from_path_rec ( child_node,count )) {
-          std::cout << "\t\tflipping " << child_node << "*\n";
-          ntk.flip_children(n, i);
-        }
-      }
-    }
-
-    std::cout << "\tBack to Node " << n << "(" << count << ")\n";
-    count++;
-    if (count > 3) return false;
-    print_inverter_from_path();
-
-    return check_and_flip_nodes ( n );
-  }
-*/
 
   void print_inverter_from_path (void) {
 
@@ -468,27 +418,7 @@ private:
       std::cout << "\n";
     });
   }
-/*
-  void remove_inverter_from_path (std::vector<node<Ntk>>& path_for_carry, int& count) {
 
-    // Starting from PO, if its carry, look at its children
-    ntk.foreach_po( [&]( auto const& s ) {
-      const auto node = ntk.get_node( s );
-      const auto index = ntk.node_to_index( node );
-      bool child_complement = false;
-      if ( is_a_carry_node(node) ) {
-
-        // Testing which node should flip
-        std::cout << "\tStarting node " << node << "\n";
-
-        if (remove_inverter_from_path_rec(node, count)) {
-          ntk.flip_complement_output(s);
-        }
-      }
-    } );
-    std::cout << "END\n";
-  }
-*/
   void init_nodes()
   {
     ntk.foreach_node( [this]( auto n, auto ) {
@@ -532,6 +462,7 @@ private:
   void print_path (std::vector<node<Ntk>> path) {
     std::cout << "Path: ";
     for (auto const node: path) {
+      if (is_in_carry_lut(node)) std::cout << "*";
       std::cout << node << ",";
     }
     std::cout << "\n";
@@ -575,24 +506,43 @@ private:
   {
 
     uint32_t starting_index = 0;
-    if (ntk.is_pi(path_for_carry[0]) || is_in_carry_lut(path_for_carry[0]))
+    node<Ntk> n_carryin;
+    node<Ntk> n_first;
+    node<Ntk> n_second;
+
+    if (ntk.is_pi(path_for_carry[0]) || is_in_carry_lut(path_for_carry[0])) {
       starting_index = 1;
+    }
 
     // Map nodes following the critical path in pairs (due to ALM)
     for (uint32_t i = starting_index; i < path_for_carry.size(); i+=2) {
-      auto& n_carryin = path_for_carry[i-1];
-      auto& n_first = path_for_carry[i];
-      auto& n_second = path_for_carry[i+1];
+
+      if (i == 0) n_carryin = 0;
+      else n_carryin = path_for_carry[i-1];
+
+      n_first = path_for_carry[i];
+      n_second = path_for_carry[i+1];
+
+      std::cout << "i " << i << ": " << n_carryin << " " << n_first << " " << n_second << "\n";
 
       if (i == path_for_carry.size()-1) {// odd number of nodes
         n_second = 0;
       }
 
-      if ((n_second != 0 && (is_in_carry_lut(n_first) && !is_in_carry_lut(n_second))) ||
-          (n_second != 0 && (!is_in_carry_lut(n_first) && is_in_carry_lut(n_second))) ) {
+      if (n_second != 0 && (is_in_carry_lut(n_first) && !is_in_carry_lut(n_second))) {
+        std::cout << n_first << "(" << is_in_carry_lut(n_first) << ") " << \
+          n_second << "(" << is_in_carry_lut(n_second) << ")\n";  
+        i++;
+        n_first = path_for_carry[i];
+        n_first = path_for_carry[i+1];
+        assert(0);
+      } else if (n_second != 0 && (!is_in_carry_lut(n_first) && is_in_carry_lut(n_second))) {
+        std::cout << n_first << "(" << is_in_carry_lut(n_first) << ") " << \
+          n_second << "(" << is_in_carry_lut(n_second) << ")\n";  
+        n_second = 0;
+        i--;
         assert(0);
       }
-      //  check_cut_carry(n_first, 0, n_carryin);
       check_cut_carry(n_first, n_second, n_carryin);
     }
   }
@@ -858,6 +808,7 @@ private:
     auto const& curr_node = ntk.index_to_node(index);
 
     // This makes sure that we are dealing with MIG nodes
+    //std::cout << curr_node << "(" << ntk.fanin_size(curr_node) << ")\n";
     assert (ntk.fanin_size(curr_node) == 3);
 
     for (uint32_t i_fanin = 0; i_fanin < ntk.fanin_size(curr_node); i_fanin++) { 
@@ -1074,12 +1025,18 @@ private:
   // the inputs to the carry LUT (so push_back)*
   //  *maybe change to keep cut numbers
   void insert_cut_to_carry_list(uint32_t index, uint32_t cindex_c,
-      uint32_t cindex_1, uint32_t cindex_2, uint32_t i, uint32_t j) {
+      uint32_t cindex_1, uint32_t cindex_2, int32_t i, int32_t j) {
 
     if (index == 0) return;
 
-    assert(i>=0 && j>=0);
 
+    if (i < 0 || j < 0) {
+      carry_cut_list[index].push_back(cindex_1);
+      carry_cut_list[index].push_back(cindex_2);
+      return;
+    }
+
+    assert(i>=0 && j>=0);
     cut_t const& cut_1 = cuts.cuts(cindex_1)[i];
     cut_t const& cut_2 = cuts.cuts(cindex_2)[j];
 
@@ -1105,7 +1062,7 @@ private:
       else if (cindex_c == ntk.node_to_index(ntk.get_node(f)))
         child_complement[2] = ntk.is_complemented(f);
       else 
-        assert(0 && std::cout << "Children index do not match with fanin.");
+        assert(0 && "Children index do not match with fanin.");
     } );
 
     kitty::dynamic_truth_table function = compute_carry_function(child_complement, unique_cuts, n_total, cut_1, cut_2);
@@ -1133,13 +1090,13 @@ private:
   int check_cut_carry(uint32_t index1, uint32_t index2, uint32_t indexc) {
 
     int32_t cost = 0;
-    int32_t max_cost = 0;
+    int32_t max_cost = 4;
     int32_t max_i = -1;
     int32_t max_j = -1;
     int32_t max_k = -1;
     int32_t max_l = -1;
 
-    //std::cout << "index " << index1 << " " << index2 << "\n";
+    std::cout << "index " << index1 << " " << index2 << " with carry " << indexc << "\n";
 
     node<Ntk> index1_child[2] = {0};
     node<Ntk> index2_child[2] = {0};
@@ -1153,6 +1110,7 @@ private:
           for (uint32_t cut_index2_2 = 0; cut_index2_2 < cuts.cuts(index2_child[1]).size(); cut_index2_2++) {
 
         cost = 0;
+
 
         // Array holding the nodes to the halfs of ALM as separate 4-LUT
         uint32_t index1_child_cuts[2][5] = {0}; 
@@ -1219,15 +1177,21 @@ private:
           cost_index1 = cuts.cuts(index1_child[0])[cut_index1_1].size() +
               cuts.cuts(index1_child[1])[cut_index1_2].size();
           cost += cost_index1;
+        } else {
+          cost += 2;
         }
 
         if (index2_status) {
           cost_index2 = cuts.cuts(index2_child[0])[cut_index2_1].size() +
               cuts.cuts(index2_child[1])[cut_index2_2].size();
           cost += cost_index2; 
+        } else {
+          cost += 2;
         }
 
+
         if (cost > max_cost) {
+          std::cout << cut_index1_1 << " " << cut_index1_2 << " " << cut_index2_1 << " " << cut_index2_2 << " -> " << cost << "\n";
           max_cost = cost;
           if (index1_status) {
             max_i = cut_index1_1;
