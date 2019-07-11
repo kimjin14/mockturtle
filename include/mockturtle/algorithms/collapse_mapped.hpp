@@ -185,7 +185,7 @@ public:
         break;
       }
 
-    //  std::cout << n << " -> " << node_to_signal[n] << "\n";
+      std::cout << n << " -> " << node_to_signal[n] << "\n";
 
       // Take the created node and create a carry signal with it
       // Has to be completed after create_node
