@@ -152,12 +152,7 @@ public:
         print_path (path_for_carry);
         carry_paths[i] = path_for_carry;
         if (path_for_carry.size() == 0) break;
-        ////////////////////////////////////////////////
-        // Remove inverters in its path
-        remove_inverter(path_for_carry);
-        cuts = cut_enumeration<Ntk, StoreFunction, CutData>( ntk, ps.cut_enumeration_ps ); 
-
-        ////////////////////////////////////////////////
+                ////////////////////////////////////////////////
         // Compute carry LUT mappgin
         //map_carry_lut_with_node(path_for_carry);
         compute_carry_mapping(path_for_carry);
@@ -169,14 +164,22 @@ public:
         path_for_carry.clear();
       }
       
+      // Must update cut truth tables since inverters were moved
+      // Currently rerunning cut_enumeration but TODO: need to just update truth table
+      // ////////////////////////////////////////////////
+      // Remove inverters in its path
+      remove_inverter();
+      cuts = cut_enumeration<Ntk, StoreFunction, CutData>( ntk, ps.cut_enumeration_ps ); 
+      for (auto update_carry_path: carry_paths)
+        compute_carry_mapping(update_carry_path);
       print_carry_paths();
 
+      check_inverter();
     }    
 
     //std::cout << "LUT mapping starts.\n";
     set_mapping_refs<false>();
-    
-    //cuts = cut_enumeration<Ntk, StoreFunction, CutData>( ntk, ps.cut_enumeration_ps ); 
+   
 
     while ( iteration < ps.rounds + (ps.rounds_carry*2 + 2) )
     {
@@ -192,7 +195,6 @@ public:
     //std::cout << "Mapping derivation starts.\n";
     
     //print_state();
-    check_inverter();
     derive_mapping();
     
   }
@@ -371,48 +373,50 @@ private:
     } 
   }
 
-  void remove_inverter ( std::vector<node<Ntk>>& path_for_carry ) {
-    for (uint32_t carry_i = 1; carry_i < path_for_carry.size(); carry_i++) {
+  void remove_inverter ( ) {
+    for (auto carry_path: carry_paths) {
+      for (uint32_t carry_i = 1; carry_i < carry_path.size(); carry_i++) {
 
-      auto carry_node = path_for_carry[carry_i];
-      auto carry_child_node = path_for_carry[carry_i-1];
-      
-      bool complemented_carry_edge = false;
-      for (uint32_t i = 0; i < ntk.fanin_size(carry_node); i++) {
-        node<Ntk> child_node = ntk.get_children(carry_node,i);  
-        if (child_node == carry_child_node && ntk.is_complemented_children(carry_node,i))
-          complemented_carry_edge = true;
-      }
-
-      // If the carry path is complemented, go through all the nodes
-      // and flip its children that match this node and the node itself
-      if (complemented_carry_edge) {
-
-        // flip children
+        auto carry_node = carry_path[carry_i];
+        auto carry_child_node = carry_path[carry_i-1];
+        
+        bool complemented_carry_edge = false;
         for (uint32_t i = 0; i < ntk.fanin_size(carry_node); i++) {
           node<Ntk> child_node = ntk.get_children(carry_node,i);  
-          std::cout << "\t\tflipping child " << child_node << "\n";
-          ntk.flip_children(carry_node, i);
+          if (child_node == carry_child_node && ntk.is_complemented_children(carry_node,i))
+            complemented_carry_edge = true;
         }
-        
-        ntk.foreach_node( [&]( auto n, auto ) {
-          for (uint32_t i = 0; i < ntk.fanin_size(n); i++) {
-            if (ntk.get_children(n,i) == carry_node) {
-              std::cout << "\t\tflipping child " << ntk.get_children(n,i) << \
-                  " of node " << n << "\n";
-              std::cout << "\t\t\tfrom " << ntk.is_complemented_children(n,i); 
-              ntk.flip_children(n, i);
-              std::cout << " to " << ntk.is_complemented_children(n,i) << "\n"; 
-            }
-          }
-        });
-        ntk.foreach_po( [&]( auto const& s ) {
-          if (ntk.get_node(s) == carry_node) {
-            std::cout << "\t\tflipping output " << ntk.get_node(s) << "\n";
-            ntk.flip_complement_output(s);
-          }
-        });
 
+        // If the carry path is complemented, go through all the nodes
+        // and flip its children that match this node and the node itself
+        if (complemented_carry_edge) {
+
+          // flip children
+          for (uint32_t i = 0; i < ntk.fanin_size(carry_node); i++) {
+            node<Ntk> child_node = ntk.get_children(carry_node,i);  
+            std::cout << "\t\tflipping child " << child_node << "\n";
+            ntk.flip_children(carry_node, i);
+          }
+          
+          ntk.foreach_node( [&]( auto n, auto ) {
+            for (uint32_t i = 0; i < ntk.fanin_size(n); i++) {
+              if (ntk.get_children(n,i) == carry_node) {
+                std::cout << "\t\tflipping child " << ntk.get_children(n,i) << \
+                    " of node " << n << "\n";
+                std::cout << "\t\t\tfrom " << ntk.is_complemented_children(n,i); 
+                ntk.flip_children(n, i);
+                std::cout << " to " << ntk.is_complemented_children(n,i) << "\n"; 
+              }
+            }
+          });
+          ntk.foreach_po( [&]( auto const& s ) {
+            if (ntk.get_node(s) == carry_node) {
+              std::cout << "\t\tflipping output " << ntk.get_node(s) << "\n";
+              ntk.flip_complement_output(s);
+            }
+          });
+
+        }
       }
     }
   }
@@ -586,8 +590,7 @@ private:
         }
         delays[ntk.node_to_index(n)] = time + CARRY_DELAY;
         continue;
-      }
- 
+      }  
       compute_best_cut<ELA>( ntk.node_to_index( n ) );
     }
     set_mapping_refs<ELA>();
@@ -1059,6 +1062,7 @@ private:
       }
     } );
 
+    carry_cut_list[index].clear();
     if (i < 0 || j < 0) {
       carry_cut_list[index].push_back(cindex_1);
       carry_cut_list[index].push_back(cindex_2);
@@ -1087,7 +1091,6 @@ private:
     assert(i>=0 && j>=0);
     cut_t const& cut_1 = cuts.cuts(cindex_1)[i];
     cut_t const& cut_2 = cuts.cuts(cindex_2)[j];
-
 
     // Set LUT function
     // cut_1 and cut_2 with MIG carry node should be
@@ -1663,18 +1666,7 @@ private:
       // This is translated into LUT functionality
       if constexpr ( StoreFunction )
       {
-        if ( is_a_carry_node(n) ) {
-          //ntk.set_cell_function( n, cuts.truth_table( cuts.cuts( index ).best() ) );
-          //std::cout << "from regular store function " << n << "\n";
-          //kitty::print_hex(cuts.truth_table( cuts.cuts( index ).best() ));
-          //std::cout << "\n";
-    //carry_cut_index_list[index1].push_back(max_i);
-    //carry_cut_index_list[index1].push_back(max_j);
-    //carry_cut_index_list[index2].push_back(max_k);
-    //carry_cut_index_list[index2].push_back(max_l);
-          //insert_cut_to_carry_list(index1, indexc, index1_child[0], index1_child[1], max_i, max_j); 
-          //insert_cut_to_carry_list(index2, index1, index2_child[0], index2_child[1], max_k, max_l); 
-        } else {
+        if ( !is_a_carry_node(n) ) {
           ntk.set_cell_function( n, cuts.truth_table( cuts.cuts( index ).best() ) );
           std::cout << n << ": ";
           kitty::print_hex(cuts.truth_table( cuts.cuts( index ).best() ));
@@ -1696,6 +1688,28 @@ private:
       ntk.add_to_mapping( n, nodes.begin(), nodes.end() );
 
     }
+   
+    // Store function for all the carry nodes separately here 
+    /*for (auto carry_path: carry_paths) {
+      for (uint32_t carry_i = 1; carry_i < carry_path.size(); carry_i++) {
+
+        auto n = carry_path[carry_i];
+        auto n_carry = carry_path[carry_i-1];
+
+        auto index = ntk.node_to_index(n);
+        auto indexc = ntk.node_to_index(n_carry);
+     
+          //ntk.set_cell_function( n, cuts.truth_table( cuts.cuts( index ).best() ) );
+          //std::cout << "from regular store function " << n << "\n";
+          //kitty::print_hex(cuts.truth_table( cuts.cuts( index ).best() ));
+          //std::cout << "\n";
+          
+          node<Ntk> index_child[2] = {0};
+          get_children_node (index_child, index, indexc); 
+          insert_cut_to_carry_list(index, indexc, index_child[0], index_child[1], \
+            carry_cut_index_list[index][0], carry_cut_index_list[index][1]); 
+      }
+    }*/
   }
 
   void print_state()
