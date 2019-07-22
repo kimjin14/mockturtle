@@ -176,7 +176,8 @@ public:
         break;
 
       case driver_type::neg:
-        node_to_signal[n] = dest.create_node( children, ~ntk.cell_function( n ) );
+        if (ntk.is_carry(n)) node_to_signal[n] = dest.create_node( children, ntk.cell_function( n ) );
+        else node_to_signal[n] = dest.create_node( children, ~ntk.cell_function( n ) );
         break;
 
       case driver_type::mixed:
@@ -191,6 +192,9 @@ public:
       // Has to be completed after create_node
       if (ntk.is_carry(n)) {
         dest.create_carry (node_to_signal[n]);
+        assert (node_driver_type[n] != driver_type::mixed);
+        if (node_driver_type[n] == driver_type::neg) 
+          node_to_signal[n] = dest.create_not( node_to_signal[n] );
       }
 
     } );

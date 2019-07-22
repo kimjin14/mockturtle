@@ -59,8 +59,10 @@ struct carry_lut_mapping_params
   bool carry_mapping{true};
 
   /*! \brief Number of rounds for carry chain synthesis. */
-  uint32_t rounds_carry{2u};  
+  uint32_t rounds_carry{3u};  
   
+  /*! \brief Determines whether to print carry node combined LUT fcn. */
+  bool carry_lut_combined{false};  
 };
 
 /*! \brief Statistics for carry_lut_mapping.
@@ -152,10 +154,11 @@ public:
         print_path (path_for_carry);
         carry_paths[i] = path_for_carry;
         if (path_for_carry.size() == 0) break;
-                ////////////////////////////////////////////////
+
+        ////////////////////////////////////////////////
         // Compute carry LUT mappgin
         //map_carry_lut_with_node(path_for_carry);
-        compute_carry_mapping(path_for_carry);
+        compute_carry_mapping<false>(path_for_carry);
         set_mapping_refs<false>();
         compute_mapping<false>();
 
@@ -171,15 +174,13 @@ public:
       remove_inverter();
       cuts = cut_enumeration<Ntk, StoreFunction, CutData>( ntk, ps.cut_enumeration_ps ); 
       for (auto update_carry_path: carry_paths)
-        compute_carry_mapping(update_carry_path);
+        compute_carry_mapping<true>(update_carry_path);
       print_carry_paths();
 
       check_inverter();
     }    
 
-    //std::cout << "LUT mapping starts.\n";
     set_mapping_refs<false>();
-   
 
     while ( iteration < ps.rounds + (ps.rounds_carry*2 + 2) )
     {
@@ -190,11 +191,6 @@ public:
     {
       compute_mapping<true>();
     }
-    //print_state();
-
-    //std::cout << "Mapping derivation starts.\n";
-    
-    //print_state();
     derive_mapping();
     
   }
@@ -518,6 +514,7 @@ private:
 
   // Decide which nodes can fit into LUT
   // Set mapping ref for those nodes
+  template<bool SetLUT>
   void compute_carry_mapping (std::vector<node<Ntk>> path_for_carry)
   {
 
@@ -526,7 +523,7 @@ private:
     node<Ntk> n_first;
     node<Ntk> n_second;
 
-    if (ntk.is_pi(path_for_carry[0]) || is_in_carry_lut(path_for_carry[0])) {
+    if (!path_for_carry.empty() && (ntk.is_pi(path_for_carry[0]) || is_in_carry_lut(path_for_carry[0]))) {
       starting_index = 1;
     }
 
@@ -559,7 +556,7 @@ private:
         i--;
         assert(0);
       }
-      check_cut_carry(n_first, n_second, n_carryin);
+      check_cut_carry<SetLUT>(n_first, n_second, n_carryin);
     }
   }
 
@@ -991,55 +988,95 @@ private:
     kitty::print_hex(cut2_function);
     std::cout << "\n";
     
+
     // Go through each combination of the input
     // i4 i3 i2 i1 i0
     // 0 0 0 0 0
     // 0 0 0 0 1
     //std::cout << "\tFunction combination\n";
     uint32_t n_combinations = pow(2,n_total+1);
-    for (uint32_t i = 0; i < n_combinations; i++) {
-      /*std::cout << "\t";
-      for (int32_t j = n_total; j >= 0; j--) {
-        std::cout << get_bit(i, j) << " ";
-      } 
-      std::cout << "\n";
-      */
-      //  Figure out which bit from the LUT represents that combination
-      uint32_t cut1_i = 0;
-      for (uint32_t j = 0; j < cut1.size(); j++) {
-        cut1_i += (get_bit(i, cut1_index[j]) << j);
-      } 
-      uint32_t cut2_i = 0;
-      for (uint32_t j = 0; j < cut2.size(); j++) {
-        cut2_i += (get_bit(i, cut2_index[j]) << j);
-      } 
+  
+    if (ps.carry_lut_combined) {
+      for (uint32_t i = 0; i < n_combinations; i++) {
+        /*std::cout << "\t";
+        for (int32_t j = n_total; j >= 0; j--) {
+          std::cout << get_bit(i, j) << " ";
+        } 
+        std::cout << "\n";
+        */
+        //  Figure out which bit from the LUT represents that combination
+        uint32_t cut1_i = 0;
+        for (uint32_t j = 0; j < cut1.size(); j++) {
+          cut1_i += (get_bit(i, cut1_index[j]) << j);
+        } 
+        uint32_t cut2_i = 0;
+        for (uint32_t j = 0; j < cut2.size(); j++) {
+          cut2_i += (get_bit(i, cut2_index[j]) << j);
+        } 
 
-      //  With the bit, find the output of LUT
-      uint32_t cut1_val = child_complement[0]? get_not_bit(cut1_function._bits[0], cut1_i) :
-          get_bit(cut1_function._bits[0], cut1_i); 
-      uint32_t cut2_val = child_complement[1]? get_not_bit(cut2_function._bits[0], cut2_i) :
-          get_bit(cut2_function._bits[0], cut2_i); 
-      uint32_t carry_val = child_complement[2]? get_not_bit (i, n_total) : get_bit(i, n_total);
+        //  With the bit, find the output of LUT
+        uint32_t cut1_val = child_complement[0]? get_not_bit(cut1_function._bits[0], cut1_i) :
+            get_bit(cut1_function._bits[0], cut1_i); 
+        uint32_t cut2_val = child_complement[1]? get_not_bit(cut2_function._bits[0], cut2_i) :
+            get_bit(cut2_function._bits[0], cut2_i); 
+        uint32_t carry_val = child_complement[2]? get_not_bit (i, n_total) : get_bit(i, n_total);
 
-      //  Combine those with the extra carry in with majority fcn
-      uint64_t lut_val = ((cut1_val && cut2_val) || (cut1_val && carry_val) || (cut2_val & carry_val));
-      
-      //std::cout << "\t" << cut1_val << " " << cut2_val << " " << carry_val << " -> " << lut_val << "\n";
-      //  Set that value in the right place of the function
-      function._bits[0] += uint64_t( lut_val << i);
-      //kitty::print_hex(function);
-      //std::cout << "\n";
+        //  Combine those with the extra carry in with majority fcn
+        uint64_t lut_val = ((cut1_val && cut2_val) || (cut1_val && carry_val) || (cut2_val & carry_val));
+        
+        //std::cout << "\t" << cut1_val << " " << cut2_val << " " << carry_val << " -> " << lut_val << "\n";
+        //  Set that value in the right place of the function
+        function._bits[0] += uint64_t( lut_val << i);
+        //kitty::print_hex(function);
+        //std::cout << "\n";
+      }
+    } else {
+      for (uint32_t i = 0; i < n_combinations; i++) {
+         //  Figure out which bit from the LUT represents that combination
+        uint32_t cut1_i = 0;
+        for (uint32_t j = 0; j < cut1.size(); j++) {
+          cut1_i += (get_bit(i, cut1_index[j]) << j);
+        } 
+        uint32_t cut2_i = 0;
+        for (uint32_t j = 0; j < cut2.size(); j++) {
+          cut2_i += (get_bit(i, cut2_index[j]) << j);
+        } 
+
+        //  With the bit, find the output of LUT
+        uint32_t cut1_val = child_complement[0]? get_not_bit(cut1_function._bits[0], cut1_i) :
+            get_bit(cut1_function._bits[0], cut1_i); 
+        uint32_t cut2_val = child_complement[1]? get_not_bit(cut2_function._bits[0], cut2_i) :
+            get_bit(cut2_function._bits[0], cut2_i); 
+        uint32_t carry_val = child_complement[2]? get_not_bit (i, n_total) : get_bit(i, n_total);
+
+        //  Combine those with the extra carry in with majority fcn
+        uint64_t lut_val = carry_val? cut1_val : cut2_val; 
+        
+        //std::cout << "\t" << cut1_val << " " << cut2_val << " " << carry_val << " -> " << lut_val << "\n";
+        //  Set that value in the right place of the function
+        function._bits[0] += uint64_t( lut_val << i);
+        //kitty::print_hex(function);
+        //std::cout << "\n";
+      }
     }
-
     //std::cout << "\tFunction:"; 
     //kitty::print_hex(function);
     //std::cout << "\n";
     return function;
   }
-
+  std::array<signal<Ntk>, 3> ordered_children( node<Ntk> const& n ) const
+  {
+    std::array<signal<Ntk>, 3> children;
+    ntk.foreach_fanin( n, [&children]( auto const& f, auto i ) { children[i] = f; } );
+    //std::sort( children.begin(), children.end(), [this]( auto const& c1, auto const& c2 ) {
+    //  return ntk.level( ntk.get_node( c1 ) ) < ntk.level( ntk.get_node( c2 ) );
+    //} );
+    return children;
+  }
   // convention is that carry_cut_list contains 
   // the inputs to the carry LUT (so push_back)*
   //  *maybe change to keep cut numbers
+  template<bool SetLUT>
   void insert_cut_to_carry_list(uint32_t index, uint32_t cindex_c,
       uint32_t cindex_1, uint32_t cindex_2, int32_t i, int32_t j) {
 
@@ -1048,43 +1085,60 @@ private:
     auto n = ntk.index_to_node(index);
 
     bool child_complement[3] = {0};
+    std::cout << "children are ";
     ntk.foreach_fanin( n, [&]( auto const& f ) {
-      if (cindex_1 == ntk.node_to_index(ntk.get_node(f)))
+      if (cindex_1 == ntk.node_to_index(ntk.get_node(f))) {
         child_complement[0] = ntk.is_complemented(f);
-      else if (cindex_2 == ntk.node_to_index(ntk.get_node(f)))
+      } else if (cindex_2 == ntk.node_to_index(ntk.get_node(f))) {
         child_complement[1] = ntk.is_complemented(f);
-      else if (cindex_c == ntk.node_to_index(ntk.get_node(f)))
+      } else if (cindex_c == ntk.node_to_index(ntk.get_node(f))) {
         child_complement[2] = ntk.is_complemented(f);
-      else { 
+      } else { 
         std::cout << "child is " << ntk.get_node(f) << " and does not fit " << \
             cindex_1 << " " << cindex_2 << " " << cindex_c << "\n";
         assert(0 && "Children index do not match with fanin.");
       }
+      std::cout << ntk.get_node(f) << "(" << ntk.is_complemented(f) << "),";
     } );
+    std::cout << "\n";
+
+    
+
+    // Cannot do this due to immutable view
+    //if (!ps.carry_lut_combined) {
+      //std::cout << "node is " << n << " to ";
+      //auto cnodes = ordered_children(cindex_1);      
+      //auto csignal = ntk.create_maj(cnodes[0], cnodes[1], cnodes[2]);
+      //ntk.substitute_node(cindex_1, csignal);
+      //std::cout << ntk.get_node(csignal) << "\n";
+    //}
 
     carry_cut_list[index].clear();
+
     if (i < 0 || j < 0) {
       carry_cut_list[index].push_back(cindex_1);
       carry_cut_list[index].push_back(cindex_2);
       carry_cut_list[index].push_back(cindex_c);
 
-      kitty::dynamic_truth_table mig_function (3);
-      mig_function._bits[0]= 0x0000000000000000;
-      for (uint32_t i = 0; i < 8; i++) {
-        uint32_t a = child_complement[0]? get_not_bit(i,0):get_bit(i,0); 
-        uint32_t b = child_complement[1]? get_not_bit(i,1):get_bit(i,1); 
-        uint32_t c = child_complement[2]? get_not_bit(i,2):get_bit(i,2);
+      if (SetLUT) {
+        kitty::dynamic_truth_table mig_function (3);
+        mig_function._bits[0]= 0x0000000000000000;
+        for (uint32_t i = 0; i < 8; i++) {
+          uint32_t a = child_complement[0]? get_not_bit(i,0):get_bit(i,0); 
+          uint32_t b = child_complement[1]? get_not_bit(i,1):get_bit(i,1); 
+          uint32_t c = child_complement[2]? get_not_bit(i,2):get_bit(i,2);
 
-        //  Combine those with the extra carry in with majority fcn
-        uint64_t lut_val = ((a && b) || (b && c) || (a & c));
-      
-        mig_function._bits[0] += uint64_t( lut_val << i);
+          //  Combine those with the extra carry in with majority fcn
+          uint64_t lut_val = ((a && b) || (b && c) || (a & c));
+        
+          mig_function._bits[0] += uint64_t( lut_val << i);
+        }
+        ntk.set_cell_function(n, mig_function );
+        std::cout << "\tCannot map any cuts, need to just put the node\n";
+        std::cout << "\tfrom mig store function 2 " << n << ": ";
+        kitty::print_hex(mig_function);
+        std::cout << "\n";
       }
-      ntk.set_cell_function(n, mig_function );
-      std::cout << "\tCannot map any cuts, need to just put the node\n";
-      std::cout << "\tfrom mig store function 2 " << n << ": ";
-      kitty::print_hex(mig_function);
-      std::cout << "\n";
       return;
     }
 
@@ -1104,12 +1158,13 @@ private:
     remove_zero_array(unique_cuts);
 
 
-    kitty::dynamic_truth_table function = compute_carry_function(child_complement, unique_cuts, n_total, cut_1, cut_2);
-    ntk.set_cell_function(n, function);
-
-    std::cout << "\tfrom mig store function 1 " << n << ": ";
-    kitty::print_hex(function);
-    std::cout << "\n";
+    if (SetLUT) {
+      kitty::dynamic_truth_table function = compute_carry_function(child_complement, unique_cuts, n_total, cut_1, cut_2);
+      ntk.set_cell_function(n, function);
+      std::cout << "\tfrom mig store function 1 " << n << ": ";
+      kitty::print_hex(function);
+      std::cout << "\n";
+    }
 
     for (uint32_t i = 0; i < n_total; i++) {
       carry_cut_list[index].push_back(unique_cuts[i]);
@@ -1126,6 +1181,7 @@ private:
   //    f0 c b a
   //    e1 d b a
   //    f1 d b a
+  template <bool SetLUT>
   int check_cut_carry(uint32_t index1, uint32_t index2, uint32_t indexc) {
 
     int32_t cost = 0;
@@ -1247,13 +1303,13 @@ private:
       }
     }
 
-    carry_cut_index_list[index1].push_back(max_i);
-    carry_cut_index_list[index1].push_back(max_j);
-    carry_cut_index_list[index2].push_back(max_k);
-    carry_cut_index_list[index2].push_back(max_l);
+    //carry_cut_index_list[index1].push_back(max_i);
+    //carry_cut_index_list[index1].push_back(max_j);
+    //carry_cut_index_list[index2].push_back(max_k);
+    //carry_cut_index_list[index2].push_back(max_l);
 
-    insert_cut_to_carry_list(index1, indexc, index1_child[0], index1_child[1], max_i, max_j); 
-    insert_cut_to_carry_list(index2, index1, index2_child[0], index2_child[1], max_k, max_l); 
+    insert_cut_to_carry_list<SetLUT>(index1, indexc, index1_child[0], index1_child[1], max_i, max_j); 
+    insert_cut_to_carry_list<SetLUT>(index2, index1, index2_child[0], index2_child[1], max_k, max_l); 
 
     return 0;
   } 
@@ -1594,38 +1650,6 @@ private:
     }
   }
 
-  // Add to carry mapping, which tells the mapping view that this node is in carry
-  // Add to regular mapping with inputs correctly representing either
-  //    mapped child node inputs, the child node 
-  /*void derive_carry_chain_mapping() {
-    //for (auto const n: carry_nodes) {
-    for ( auto const& n : top_order ) {
-      if (ntk.is_constant(n) || ntk.is_pi(n) || !is_a_carry_node(n))
-        continue;
-
-      std::vector<node<Ntk>> nodes;
-
-      for ( auto c: carry_cut_list[ntk.node_to_index(n)]) {
-        nodes.push_back(c);
-      }
-      std::cout << "\tCarry Mapping " << n << ":";
-      for (auto printnode: nodes) 
-        std::cout << printnode << ",";
-      std::cout << "\n";
-
-      ntk.add_to_mapping( n, nodes.begin(), nodes.end() );
-      ntk.add_to_carry_mapping (n, 0); 
-    }
-  }
-*/
-
-  std::array<signal<Ntk>, 3> ordered_children( node<Ntk> const& n ) const
-  {
-    std::array<signal<Ntk>, 3> children;
-    ntk.foreach_fanin( n, [&children]( auto const& f, auto i ) { children[i] = f; } );
-    return children;
-  }
-
   void derive_mapping()
   {
     ntk.clear_mapping();
@@ -1641,27 +1665,41 @@ private:
 
       std::vector<node<Ntk>> nodes;
 
+      // In the case of carry node, either map the LUT as
       if ( is_a_carry_node(n) ) {
-        //std::cout << "\tCarry Mapping " << n << ":";
-        for ( auto c: carry_cut_list[ntk.node_to_index(n)]) {
-          nodes.push_back(c);
-        }
-        //for (auto printnode: nodes) {
-        //  if (printnode > n) std::cout << "*";
-        //  std::cout << printnode << ",";
-        //}
-        //std::cout << "\n";
-        ntk.add_to_carry_mapping (n, 0); 
-      } else {
+        //if (ps.carry_lut_combined) {
+          ntk.add_to_carry_mapping (n, 0); 
+          for ( auto c: carry_cut_list[ntk.node_to_index(n)]) {
+            nodes.push_back(c);
+          }
+        //} else {
+          /*ntk.foreach_fanin( n, [&]( auto const& f ) {
 
+            const auto child_node = ntk.get_node(f);
+            std::vector<node<Ntk>> children_lut_nodes;
+
+            nodes.push_back(child_node);
+              
+            if (is_a_carry_node(child_node) || ntk.is_pi(child_node) || \
+                ntk.is_constant(child_node)) {
+              children_lut_nodes.push_back(child_node);
+            } else {
+              for (auto c: carry_cut_list[ntk.node_to_index(child_node)]) {
+                children_lut_nodes.push_back(c);
+              }
+            }
+            ntk.add_to_mapping( child_node, children_lut_nodes.begin(), children_lut_nodes.end());
+
+          });*/
+        //}
+      } else {
         if ( map_refs[index] == 0 ) 
           continue;
-        //std::cout << "\tRegular Mapping " << n << ":";
         for ( auto const& l : cuts.cuts( index ).best() ) {
           nodes.push_back( ntk.index_to_node( l ) );
         }
-
       }
+      ntk.add_to_mapping( n, nodes.begin(), nodes.end() );
 
       // This is translated into LUT functionality
       if constexpr ( StoreFunction )
@@ -1672,44 +1710,12 @@ private:
           kitty::print_hex(cuts.truth_table( cuts.cuts( index ).best() ));
           std::cout << "\n";
 
-          for (auto cut_node: cuts.cuts(index).best()) {
-            std::cout << cut_node << " ";
-          } std::cout << "\n";
+          //for (auto cut_node: cuts.cuts(index).best()) {
+          //  std::cout << cut_node << " ";
+          //} std::cout << "\n";
         }
       }
-
-      // Finding the depth and number of MIG node of each mapped LUT
-      //uint32_t depth = 0;
-      //uint32_t num_nodes = 1;
-      //find_num_nodes (n, cuts.cuts( index ).best(), &num_nodes, 1, &depth, false);
-      //ntk.clear_visited();
-      //std::cout << index << "," << depth << "," << num_nodes << "\n";
-        
-      ntk.add_to_mapping( n, nodes.begin(), nodes.end() );
-
     }
-   
-    // Store function for all the carry nodes separately here 
-    /*for (auto carry_path: carry_paths) {
-      for (uint32_t carry_i = 1; carry_i < carry_path.size(); carry_i++) {
-
-        auto n = carry_path[carry_i];
-        auto n_carry = carry_path[carry_i-1];
-
-        auto index = ntk.node_to_index(n);
-        auto indexc = ntk.node_to_index(n_carry);
-     
-          //ntk.set_cell_function( n, cuts.truth_table( cuts.cuts( index ).best() ) );
-          //std::cout << "from regular store function " << n << "\n";
-          //kitty::print_hex(cuts.truth_table( cuts.cuts( index ).best() ));
-          //std::cout << "\n";
-          
-          node<Ntk> index_child[2] = {0};
-          get_children_node (index_child, index, indexc); 
-          insert_cut_to_carry_list(index, indexc, index_child[0], index_child[1], \
-            carry_cut_index_list[index][0], carry_cut_index_list[index][1]); 
-      }
-    }*/
   }
 
   void print_state()
@@ -1763,6 +1769,7 @@ private:
 };
 
 }; /* namespace detail */
+
 
 /*! \brief LUT mapping.
  *

@@ -198,7 +198,7 @@ public:
 
   bool is_carry ( node const& n ) const {
     bool carry = false;
-    for (auto &c: _carry_nodes) {
+    for (auto c: _carry_nodes) {
       if (index_to_node(c) == n) carry = true; 
     }
     return n > 1 && carry;
@@ -431,6 +431,12 @@ signal create_maj( signal a, signal b, signal c )
   node get_node( signal const& f ) const
   {
     return f;
+  }
+
+  node get_children (node const& n, uint32_t i) const
+  {
+    assert(i < fanin_size(n));
+    return _storage->nodes[n].children[i].index;
   }
 
   signal make_signal( node const& n ) const
