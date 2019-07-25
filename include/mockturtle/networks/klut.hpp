@@ -299,18 +299,20 @@ signal create_maj( signal a, signal b, signal c )
 #pragma endregion
 
 #pragma region Create arbitrary functions
+  template<bool hash = true>
   signal _create_node( std::vector<signal> const& children, uint32_t literal )
   {
     storage::element_type::node_type node;
     std::copy( children.begin(), children.end(), std::back_inserter( node.children ) );
     node.data[1].h1 = literal;
 
-    const auto it = _storage->hash.find( node );
-    if ( it != _storage->hash.end() )
-    {
-      return it->second;
+    if (hash) {
+      const auto it = _storage->hash.find( node );
+      if ( it != _storage->hash.end() )
+      {
+        return it->second;
+      }
     }
-
     const auto index = _storage->nodes.size();
     _storage->nodes.push_back( node );
     _storage->hash[node] = index;
@@ -331,9 +333,14 @@ signal create_maj( signal a, signal b, signal c )
     return index;
   }
 
+  signal create_node_nohash( std::vector<signal> const& children, kitty::dynamic_truth_table const& function )
+  {
+    return _create_node<false> ( children, _storage->data.cache.insert( function ) );
+  }
+
   signal create_node( std::vector<signal> const& children, kitty::dynamic_truth_table const& function )
   {
-    return _create_node( children, _storage->data.cache.insert( function ) );
+    return _create_node<true> ( children, _storage->data.cache.insert( function ) );
   }
 
   signal clone_node( klut_network const& other, node const& source, std::vector<signal> const& children )

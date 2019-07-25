@@ -167,34 +167,37 @@ public:
         children.push_back( node_to_signal[fanin] );
       } );
 
-      switch ( node_driver_type[n] )
-      {
-      default:
-      case driver_type::none:
-      case driver_type::pos:
-        node_to_signal[n] = dest.create_node( children, ntk.cell_function( n ) );
-        break;
+      if (ntk.is_carry(n)) {
+        node_to_signal[n] = dest.create_node_nohash( children, ntk.cell_function( n ) );
+      } else {
+        switch ( node_driver_type[n] )
+        {
+        default:
+        case driver_type::none:
+        case driver_type::pos:
+          node_to_signal[n] = dest.create_node( children, ntk.cell_function( n ) );
+          break;
 
-      case driver_type::neg:
-        if (ntk.is_carry(n)) node_to_signal[n] = dest.create_node( children, ntk.cell_function( n ) );
-        else node_to_signal[n] = dest.create_node( children, ~ntk.cell_function( n ) );
-        break;
+        case driver_type::neg:
+          node_to_signal[n] = dest.create_node( children, ~ntk.cell_function( n ) );
+          break;
 
-      case driver_type::mixed:
-        node_to_signal[n] = dest.create_node( children, ntk.cell_function( n ) );
-        opposites[n] = dest.create_node( children, ~ntk.cell_function( n ) );
-        break;
+        case driver_type::mixed:
+          node_to_signal[n] = dest.create_node( children, ntk.cell_function( n ) );
+          opposites[n] = dest.create_node( children, ~ntk.cell_function( n ) );
+          break;
+        }
       }
-
       std::cout << n << " -> " << node_to_signal[n] << "\n";
 
       // Take the created node and create a carry signal with it
       // Has to be completed after create_node
       if (ntk.is_carry(n)) {
         dest.create_carry (node_to_signal[n]);
-        assert (node_driver_type[n] != driver_type::mixed);
         if (node_driver_type[n] == driver_type::neg) 
           node_to_signal[n] = dest.create_not( node_to_signal[n] );
+        else if (node_driver_type[n] == driver_type::mixed)
+          opposites[n] = dest.create_not( node_to_signal[n] );
       }
 
     } );

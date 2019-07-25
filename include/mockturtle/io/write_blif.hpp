@@ -90,8 +90,14 @@ void write_blif( Ntk const& ntk, std::ostream& os )
   if ( topo_ntk.num_pis() > 0u )
   {
     os << ".inputs ";
+    uint32_t count = 0;
     topo_ntk.foreach_pi( [&]( auto const& n ) {
-        os << fmt::format( "n{} ", topo_ntk.node_to_index( n ) );
+        os << fmt::format( "n{} ", topo_ntk.node_to_index( n ));
+        if (count > 100) {
+          os << fmt::format( "\\\n" );
+          count = 0;
+        } else
+          count++;
       } );
     os << "\n";
   }
@@ -99,8 +105,14 @@ void write_blif( Ntk const& ntk, std::ostream& os )
   if ( topo_ntk.num_pos() > 0u )
   {
     os << ".outputs ";
+    uint32_t count = 0;
     topo_ntk.foreach_po( [&]( auto const& n, auto index ) {
         os << fmt::format( "po{} ", index );
+        if (count > 100) {
+          os << fmt::format( "\\\n" );
+          count = 0;
+        } else
+          count++;
       } );
     os << "\n";
   }
@@ -112,6 +124,11 @@ void write_blif( Ntk const& ntk, std::ostream& os )
   os << "1\n";
 
   uint32_t next_node = topo_ntk.size();
+
+  std::vector<uint32_t> adder_cout;
+  std::vector<uint32_t> adder_a;
+  std::vector<uint32_t> adder_b;
+  std::vector<uint32_t> adder_cin;
 
   topo_ntk.foreach_node( [&]( auto const& n ) {
     if ( topo_ntk.is_constant( n ) || topo_ntk.is_pi( n ) )
@@ -203,23 +220,23 @@ void write_blif( Ntk const& ntk, std::ostream& os )
         }
       }
 
-      // Print mig node
       auto carry_child = topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1);
-      os << fmt::format( ".names " );
-      os << fmt::format( "n{} ", next_node - 2 );
-      os << fmt::format( "n{} ", next_node - 1 );
-      os << fmt::format( "n{} ", topo_ntk.node_to_index(carry_child) );
-      os << fmt::format( " n{}\n", topo_ntk.node_to_index( n ) );
-      os << "-11 1\n";
-      os << "11- 1\n";
-      os << "1-1 1\n";
+      adder_a.push_back(next_node-2);
+      adder_b.push_back(next_node-1);
+      adder_cin.push_back(topo_ntk.node_to_index(carry_child));
+      adder_cout.push_back(topo_ntk.node_to_index(n));
+
+
 
     } else {
       os << fmt::format( ".names " );
       topo_ntk.foreach_fanin( n, [&]( auto const& c ) {
         os << fmt::format( "n{} ", topo_ntk.node_to_index( c ) );
       });
-      os << fmt::format( " n{}\n", topo_ntk.node_to_index( n ) );
+      if (topo_ntk.is_carry(n)) 
+        os << fmt::format( " n{}\n", topo_ntk.node_to_index( n ) );
+      else
+        os << fmt::format( " n{}\n", topo_ntk.node_to_index( n ) );
     
       auto const func = topo_ntk.node_function( n );
       for ( const auto& cube : isop( func ) )
@@ -229,17 +246,44 @@ void write_blif( Ntk const& ntk, std::ostream& os )
       }
     }
   });
-  
+
+  for (uint32_t i = 0; i < adder_cout.size(); i++) {
+    // Print mig node
+    if (true) {
+      os << fmt::format( ".subckt adder " );
+      os << fmt::format( "a=n{} ", adder_a[i]);
+      os << fmt::format( "b=n{} ", adder_b[i]);
+      os << fmt::format( "cin=n{} ", adder_cin[i]);
+      os << fmt::format( "sumout=a{} ",adder_cout[i]);
+      os << fmt::format( "cout=n{}\n", adder_cout[i]);
+    } else { 
+      os << fmt::format( ".names " );
+      os << fmt::format( "n{} ", adder_a[i]);
+      os << fmt::format( "n{} ", adder_b[i]);
+      os << fmt::format( "n{} ", adder_cin[i]);
+      os << fmt::format( " n{}\n", adder_cout[i]);
+      os << "-11 1\n";
+      os << "11- 1\n";
+      os << "1-1 1\n";
+    }
+  }
 
   if ( topo_ntk.num_pos() > 0u )
   {
     topo_ntk.foreach_po( [&]( auto const& n, auto index ) {
-        if (topo_ntk.is_carry(n) && topo_ntk.is_complemented(n))
-          os << fmt::format( ".names n{} po{}\n0 1\n", topo_ntk.node_to_index( n ), index );
-        else
+        //if (topo_ntk.is_carry(n) && topo_ntk.is_complemented(n))
+        //  os << fmt::format( ".names n{} po{}\n0 1\n", topo_ntk.node_to_index( n ), index );
+        //else
           os << fmt::format( ".names n{} po{}\n1 1\n", topo_ntk.node_to_index( n ), index );
       } );
   }
+
+
+  os << "\n.model adder\n";
+  os << ".inputs a b cin\n";
+  os << ".outputs sumout cout\n";
+  os << ".blackbox\n";
+  os << ".end\n\n";
 
   os << ".end\n";
   os << std::flush;
