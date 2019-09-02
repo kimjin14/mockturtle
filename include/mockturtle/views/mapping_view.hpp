@@ -203,11 +203,17 @@ public:
     } else { return false; }
   }
 
+  node carry_driver( node const& n) const {
+    if (_mapping_storage->carry_mappings[this->node_to_index(n)] != 0) {
+      return _mapping_storage->carry_mappings[this->node_to_index(n)] ;
+    } else { return 0; }
+  }
   bool is_carry_lut ( node const& n) const {
     
     return true;    
   }
 
+  // carry index holds the driver for this carry node
   void add_to_carry_mapping( node const& n, uint32_t carry_index )
   {
 
@@ -215,7 +221,7 @@ public:
     assert (_mapping_storage->carry_mappings[this->node_to_index( n )] == 0);
 
     // carry node index
-    _mapping_storage->carry_mappings[this->node_to_index( n )]++;
+    _mapping_storage->carry_mappings[this->node_to_index( n )] = carry_index;
     _mapping_storage->carry_mapping_size++;
     _mapping_storage->carry_lut_mapping_size+=carry_index;
   }

@@ -55,7 +55,7 @@ int main (int argc, char *argv[]){
   lorina::diagnostic_engine diag;
   lorina::return_code result;
 
-  //std::cout << argv[1] << ",";
+  std::cout << argv[1] << ",";
   
   /////////////////////////////
   // Read Verilog into a MIG network.
@@ -70,7 +70,7 @@ int main (int argc, char *argv[]){
   }
 
   depth_view depth_mig { mig }; 
-  //std::cout << mig.num_gates() << "," << depth_mig.depth() << ",";
+  std::cout << mig.num_gates() << "," << depth_mig.depth() << ",";
   
   ///////////////////////////// 
   // Map MIG to LUT and carry
@@ -84,7 +84,7 @@ int main (int argc, char *argv[]){
   }
   auto const& klut_carry = *klut_carry_opt;
   carry_depth_view depth_klut_carry { klut_carry }; 
-  std::cout << "lut mapping finished\n";
+  //std::cout << "lut mapping finished\n";
 
   /////////////////////////////
   // Map MIG to LUT only
@@ -112,10 +112,14 @@ int main (int argc, char *argv[]){
     return 0;
   }*/
 
-  //std::cout << klut.num_gates() << "," << depth_klut.depth() << ",";
-  //std::cout << klut_carry.num_gates() << "," << float(depth_klut_carry.depth()/7.0) << "\n";
-  write_blif(klut_carry, "blif/" + getFileName(argv[1]) + "_carry.blif");  
-  write_blif(klut, "blif/" + getFileName(argv[1]) + ".blif");  
+  std::cout << klut.num_gates() << "," << depth_klut.depth() << ",";
+  std::cout << klut_carry.num_gates() << "," << float(depth_klut_carry.depth()/7.0) << "\n";
+
+  /////////////////////////////
+  // Write to BLIF for VPR
+  /////////////////////////////
+  write_blif(klut_carry, "blif/" + getFileName(argv[1]) + "_carry.blif", "output_carry.log");  
+  write_blif(klut, "blif/" + getFileName(argv[1]) + ".blif", "output.log");  
 
   std::ofstream os( ("blif/" + getFileName(argv[1]) + "_carry.v").c_str(), std::ofstream::out );
   write_verilog(mig, os);

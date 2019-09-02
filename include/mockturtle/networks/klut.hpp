@@ -192,8 +192,9 @@ public:
     _storage->outputs.emplace_back( f );
   }
 
-  void create_carry ( uint32_t index ) {
+  void create_carry ( uint32_t index, uint32_t driver_index ) {
     _carry_nodes.push_back(index);
+    _carry_driver_nodes.push_back(driver_index);
   }
 
   bool is_carry ( node const& n ) const {
@@ -203,6 +204,30 @@ public:
     }
     return n > 1 && carry;
   }
+   
+  node get_carry_driver( node const& n) {
+
+    for (uint32_t i = 0; i < _carry_nodes.size(); i++) {
+      if (index_to_node(_carry_nodes[i]) == n) return _carry_driver_nodes[i]; 
+    }
+
+  }
+
+
+//  void set_carry_driver ( node n ) {
+//    for (auto &c: _carry_nodes) {
+//       c = n;
+//    }
+//  }
+//
+//  node get_carry_driver ( node n )  {
+//    for (auto c: _carry_nodes) {
+//      if (index_to_node(c) == n) carry = true; 
+//    }
+//    return n > 1 && carry;
+//  }
+//
+  
 
   bool is_combinational() const
   {
@@ -620,6 +645,7 @@ public:
   std::shared_ptr<klut_storage> _storage;
   std::shared_ptr<network_events<base_type>> _events;
   std::vector<uint64_t> _carry_nodes;
+  std::vector<uint64_t> _carry_driver_nodes;
 };
 
 } // namespace mockturtle

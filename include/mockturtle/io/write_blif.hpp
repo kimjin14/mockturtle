@@ -38,7 +38,6 @@
 
 #include <fmt/format.h>
 #include <kitty/operations.hpp>
-#include <kitty/print.hpp>
 #include <kitty/isop.hpp>
 
 #include "../traits.hpp"
@@ -68,7 +67,7 @@ namespace mockturtle
  * \param os Output stream
  */
 template<class Ntk>
-void write_blif( Ntk const& ntk, std::ostream& os )
+void write_blif( Ntk const& ntk, std::ostream& os, std::ostream& os_log  )
 {
   static_assert( is_network_type_v<Ntk>, "Ntk is not a network type" );
   static_assert( has_fanin_size_v<Ntk>, "Ntk does not implement the fanin_size method" );
@@ -85,6 +84,10 @@ void write_blif( Ntk const& ntk, std::ostream& os )
 
   topo_view topo_ntk{ntk};
 
+  // This file contains informations on which nodes are carry chains
+  // and which blif outputs are related to those carry chains
+  os_log << "Carry chain mapping info.\n";
+
   os << ".model netlist\n";
 
   if ( topo_ntk.num_pis() > 0u )
@@ -92,13 +95,13 @@ void write_blif( Ntk const& ntk, std::ostream& os )
     os << ".inputs ";
     uint32_t count = 0;
     topo_ntk.foreach_pi( [&]( auto const& n ) {
-        os << fmt::format( "n{} ", topo_ntk.node_to_index( n ));
-        if (count > 100) {
-          os << fmt::format( "\\\n" );
-          count = 0;
-        } else
-          count++;
-      } );
+      os << fmt::format( "n{} ", topo_ntk.node_to_index( n ));
+      if (count > 100) {
+        os << fmt::format( "\\\n" );
+        count = 0;
+      } else
+        count++;
+    } );
     os << "\n";
   }
 
@@ -131,16 +134,14 @@ void write_blif( Ntk const& ntk, std::ostream& os )
   std::vector<uint32_t> adder_cin;
 
   topo_ntk.foreach_node( [&]( auto const& n ) {
+    os_log << n << ":\n";    
     if ( topo_ntk.is_constant( n ) || topo_ntk.is_pi( n ) )
       return; /* continue */
 
     // In case of carry mapped LUT
-    if ( topo_ntk.is_carry(n) ) {
-      
+    if (topo_ntk.is_carry(n) ) {
+  
       auto const func = topo_ntk.node_function( n );
-      std::cout << "func of node " << n << " is ";
-      kitty::print_hex(func);
-      std::cout << "\n";
       auto list_of_cubes = isop(func);     
       uint32_t count = 0;
 
@@ -226,9 +227,8 @@ void write_blif( Ntk const& ntk, std::ostream& os )
       adder_cin.push_back(topo_ntk.node_to_index(carry_child));
       adder_cout.push_back(topo_ntk.node_to_index(n));
 
-
-
     } else {
+
       os << fmt::format( ".names " );
       topo_ntk.foreach_fanin( n, [&]( auto const& c ) {
         os << fmt::format( "n{} ", topo_ntk.node_to_index( c ) );
@@ -253,9 +253,9 @@ void write_blif( Ntk const& ntk, std::ostream& os )
       os << fmt::format( ".subckt adder " );
       os << fmt::format( "a=n{} ", adder_a[i]);
       os << fmt::format( "b=n{} ", adder_b[i]);
-      os << fmt::format( "cin=n{} ", adder_cin[i]);
-      os << fmt::format( "sumout=a{} ",adder_cout[i]);
-      os << fmt::format( "cout=n{}\n", adder_cout[i]);
+      os << fmt::format( "cin=c{} ", adder_cin[i]);
+      os << fmt::format( "sumout=n{} ",adder_cout[i]);
+      os << fmt::format( "cout=c{}\n", adder_cout[i]);
     } else { 
       os << fmt::format( ".names " );
       os << fmt::format( "n{} ", adder_a[i]);
@@ -266,6 +266,10 @@ void write_blif( Ntk const& ntk, std::ostream& os )
       os << "11- 1\n";
       os << "1-1 1\n";
     }
+    os_log << "\t" << "carry LUT nodes ";    
+    os_log << "n" << adder_a[i] << " ";
+    os_log << "n" << adder_b[i] << "\n";
+
   }
 
   if ( topo_ntk.num_pos() > 0u )
@@ -277,6 +281,7 @@ void write_blif( Ntk const& ntk, std::ostream& os )
           os << fmt::format( ".names n{} po{}\n1 1\n", topo_ntk.node_to_index( n ), index );
       } );
   }
+  os << ".end\n";
 
 
   os << "\n.model adder\n";
@@ -285,8 +290,8 @@ void write_blif( Ntk const& ntk, std::ostream& os )
   os << ".blackbox\n";
   os << ".end\n\n";
 
-  os << ".end\n";
   os << std::flush;
+  os_log << std::flush;
 }
 
 /*! \brief Writes network in BENCH format into a file
@@ -308,11 +313,13 @@ void write_blif( Ntk const& ntk, std::ostream& os )
  * \param filename Filename
  */
 template<class Ntk>
-void write_blif( Ntk const& ntk, std::string const& filename )
+void write_blif( Ntk const& ntk, std::string const& filename, std::string const& filename_log )
 {
+  std::ofstream os_log( filename_log.c_str(), std::ofstream::out );
   std::ofstream os( filename.c_str(), std::ofstream::out );
-  write_blif( ntk, os );
+  write_blif( ntk, os, os_log );
   os.close();
+  os_log.close();
 }
 
 } /* namespace mockturtle */

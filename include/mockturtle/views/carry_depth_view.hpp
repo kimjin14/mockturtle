@@ -39,7 +39,7 @@
 #include "../utils/node_map.hpp"
 #include "immutable_view.hpp"
 
-#define LUT_DELAY 7
+#define LUT_DELAY 3
 #define CARRY_DELAY 1
 
 namespace mockturtle
@@ -170,16 +170,22 @@ private:
     }
 
     uint32_t level{0};
+    node slowest_node = n;
     this->foreach_fanin( n, [&]( auto const& f ) {
       auto clevel = compute_levels( this->get_node( f ) );
+      
       if ( _count_complements && this->is_complemented( f ) )
       {
         clevel++;
       }
+      if (clevel > level) {
+        level = clevel;
+        slowest_node = this->get_node(f);
+      }
       level = std::max( level, clevel );
     } );
 
-    if (this->is_carry(n)) {
+    if (this->is_carry(n) && (this->get_carry_driver(n) == slowest_node)) {
       return _levels[n] = level + CARRY_DELAY;
     }
     return _levels[n] = level + LUT_DELAY;

@@ -1090,9 +1090,6 @@ public:
     auto tt2 = *begin++;
     auto tt3 = *begin++;
 
-    std::cout << "\t" << c1.index << "(" << c1.weight << ") " << \
-        c2.index << "(" << c2.weight << ") " << \
-        c3.index << "(" << c3.weight << ")";
     return kitty::ternary_majority( c1.weight ? ~tt1 : tt1, c2.weight ? ~tt2 : tt2, c3.weight ? ~tt3 : tt3 );
   }
 #pragma endregion

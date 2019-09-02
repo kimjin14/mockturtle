@@ -361,8 +361,6 @@ private:
   {
     stopwatch t( st.time_truth_table );
 
-    std::cout << "running truth table " << index << ":";
-
     std::vector<kitty::dynamic_truth_table> tt( vcuts.size() );
     auto i = 0;
     for ( auto const& cut : vcuts )
@@ -372,7 +370,6 @@ private:
       kitty::expand_inplace( tt[i], supp );
       ++i;
     }
-    std::cout << res << ":";
 
     auto tt_res = ntk.compute( ntk.index_to_node( index ), tt.begin(), tt.end() );
 
@@ -395,10 +392,6 @@ private:
         return cuts._truth_tables.insert( tt_res_shrink );
       }
     }
-
-    std::cout << ": ";
-    kitty::print_hex(tt_res);
-    std::cout << "\n";
 
     return cuts._truth_tables.insert( tt_res );
   }
