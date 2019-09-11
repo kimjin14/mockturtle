@@ -113,18 +113,18 @@ int main (int argc, char *argv[]){
   }*/
 
   std::cout << klut.num_gates() << "," << depth_klut.depth() << ",";
-  std::cout << klut_carry.num_gates() << "," << float(depth_klut_carry.depth()/7.0) << "\n";
+  std::cout << klut_carry.num_gates() << "," << float(depth_klut_carry.depth()/3.0) << "\n";
 
   /////////////////////////////
   // Write to BLIF for VPR
   /////////////////////////////
   write_blif(klut_carry, "blif/" + getFileName(argv[1]) + "_carry.blif", "output_carry.log");  
-  write_blif(klut, "blif/" + getFileName(argv[1]) + ".blif", "output.log");  
+  //write_blif(klut, "blif/" + getFileName(argv[1]) + ".blif", "output.log");  
 
-  std::ofstream os( ("blif/" + getFileName(argv[1]) + "_carry.v").c_str(), std::ofstream::out );
-  write_verilog(mig, os);
-  std::ofstream os1( ("blif/" + getFileName(argv[1]) + ".v").c_str(), std::ofstream::out );
-  write_verilog(mig_original, os1);
+  //std::ofstream os( ("blif/" + getFileName(argv[1]) + "_carry.v").c_str(), std::ofstream::out );
+  //write_verilog(mig, os);
+  //std::ofstream os1( ("blif/" + getFileName(argv[1]) + ".v").c_str(), std::ofstream::out );
+  //write_verilog(mig_original, os1);
 
   mig.clear_values();
 

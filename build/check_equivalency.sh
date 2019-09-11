@@ -8,24 +8,16 @@ do
   IFS='.'
   benchmark_name=(${file})
   IFS=$OIFS
-  #echo "Processing $file file..."
+  echo "Processing $file file..."
 
-  # run benchmark
-  #./run_benchmarks/run_benchmark $f
-
-  
-
+  # run mapping on benchmark
   ./run_benchmarks/run_benchmark $f > log/${benchmark_name[1]}.log
- 
   diff blif/${benchmark_name[1]}.blif blif/${benchmark_name[1]}_carry.blif >> log/${benchmark_name[1]}.log
-
   ../../abc/abc -c "cec blif/${benchmark_name[1]}.blif blif/${benchmark_name[1]}_carry.blif" >> log/${benchmark_name[1]}.log
 
+  # check if mapping produced correct blif
   echo "check log/${benchmark_name[1]}.log for results."
-
-  
-  # parse results
-  #python parse_log.py output_$file.log 
+  grep "Networks are equivalent" log/${benchmark_name[1]}.log
 
 done
 

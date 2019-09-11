@@ -113,6 +113,7 @@ public:
         flows( ntk.size() ),
         delays( ntk.size() ),
         carry_cut_list( ntk.size() ),
+        carry_node_mapped ( ntk.size() ),
         carry_nodes( ntk.size(), 0),
         carry_driver_nodes( ntk.size(), 0),
         carry_cut_index_list ( ntk.size() ),
@@ -138,6 +139,8 @@ public:
 
       std::vector<node<Ntk>> path_for_carry;
 
+      init_carry_mapping();
+
       // Initial mapping to LUTs only.
       set_mapping_refs<false>();
       compute_mapping<false>();
@@ -157,7 +160,7 @@ public:
         for (uint32_t j = 1; j < path_for_carry.size(); j++) {
           carry_driver_nodes[path_for_carry[j]] = path_for_carry[j-1];
         }
-        if (path_for_carry.size() == 0) break;
+        if (path_for_carry.empty()) break;
 
         ////////////////////////////////////////////////
         // Compute carry LUT mappgin
@@ -175,14 +178,16 @@ public:
       // Currently rerunning cut_enumeration but TODO: need to just update truth table
       // ////////////////////////////////////////////////
       // Remove inverters in its path
+      init_carry_mapping();
       remove_inverter();
       cuts = cut_enumeration<Ntk, StoreFunction, CutData>( ntk, ps.cut_enumeration_ps ); 
-      for (auto update_carry_path: carry_paths)
+      for (auto update_carry_path: carry_paths) {
+        if (update_carry_path.empty()) break;
         compute_carry_mapping<true>(update_carry_path);
-      //print_carry_paths();
+      }
 
       check_inverter();
-      print_state();
+      //print_state();
     }    
 
     set_mapping_refs<false>();
@@ -364,8 +369,10 @@ private:
           //std::cout << child_node << "(" << ntk.is_complemented_children(n,i) << ")";
           if(child_node == n_carry) {
             //std::cout << "*";
-            if (ntk.is_complemented_children(n,i)) 
+            if (ntk.is_complemented_children(n,i)) { 
+              if (carry_i == carry_path.size()-1) std::cout << "^";
               assert(0);
+            }
           }
           //std::cout << " ";
         } 
@@ -403,19 +410,19 @@ private:
             for (uint32_t i = 0; i < ntk.fanin_size(n); i++) {
               if (ntk.get_children(n,i) == carry_node) {
                 //std::cout << "\t\tflipping child " << ntk.get_children(n,i) << \
-                    " of node " << n << "\n";
+                //    " of node " << n << "\n";
                 //std::cout << "\t\t\tfrom " << ntk.is_complemented_children(n,i); 
                 ntk.flip_children(n, i);
                 //std::cout << " to " << ntk.is_complemented_children(n,i) << "\n"; 
               }
             }
           });
-          ntk.foreach_po( [&]( auto const& s ) {
-            if (ntk.get_node(s) == carry_node) {
-              //std::cout << "\t\tflipping output " << ntk.get_node(s) << "\n";
-              ntk.flip_complement_output(s);
-            }
-          });
+          //ntk.foreach_po( [&]( auto const& s ) {
+          //  if (ntk.get_node(s) == carry_node) {
+          //    std::cout << "\t\tflipping output " << ntk.get_node(s) << "\n";
+          //    ntk.flip_complement_output(s);
+          //  }
+          //});
 
         }
       }
@@ -433,6 +440,12 @@ private:
       }
       std::cout << "\n";
     });
+  }
+
+  void init_carry_mapping() {
+    ntk.foreach_node( [this]( auto n ) {
+      carry_node_mapped[n] = false; 
+    } );
   }
 
   void init_nodes()
@@ -528,40 +541,55 @@ private:
     node<Ntk> n_first;
     node<Ntk> n_second;
 
-    if (!path_for_carry.empty() && (ntk.is_pi(path_for_carry[0]) || is_in_carry_lut(path_for_carry[0]))) {
+    // This function should not be called with an empty carry path
+    assert(!path_for_carry.empty());
+
+    // If the first node is a PI (first path) or in carry LUT (subsequent path), 
+    // first node to be mapped should start from the next one. 
+    // It should be guranteed that this is NOT already mapped.
+    if (ntk.is_pi(path_for_carry[0]) || is_in_carry_lut(path_for_carry[0])) {
       starting_index = 1;
     }
 
-    // Map nodes following the critical path in pairs (due to ALM)
+    // Map nodes in pairs (i+=2) since each ALM has 2 adders
     for (uint32_t i = starting_index; i < path_for_carry.size(); i+=2) {
 
+      // Assign carryin, 1st/2nd node
+      // for mapping.
       if (i == 0) n_carryin = 0;
       else n_carryin = path_for_carry[i-1];
-
       n_first = path_for_carry[i];
       n_second = path_for_carry[i+1];
 
-      //std::cout << "i " << i << ": " << n_carryin << " " << n_first << " " << n_second << "\n";
-
-      if (i == path_for_carry.size()-1) {// odd number of nodes
+      // Since we are incrementing by 2,
+      // if i is equal to the path size - 1,
+      // we have odd number of nodes.
+      if (i == path_for_carry.size()-1 || is_carry_node_mapped(n_second)) {
         n_second = 0;
       }
 
+      //std::cout << "i " << i << ": " << n_carryin << " " << n_first << " " << n_second << "\n";
+
+      // This should never happen since we don't allow multiple merging
+      // of carry chain to existing carry chain
       if (n_second != 0 && (is_in_carry_lut(n_first) && !is_in_carry_lut(n_second))) {
-        //std::cout << n_first << "(" << is_in_carry_lut(n_first) << ") " << \
+        std::cout << n_first << "(" << is_in_carry_lut(n_first) << ") " << \
           n_second << "(" << is_in_carry_lut(n_second) << ")\n";  
         i++;
         n_first = path_for_carry[i];
-        n_first = path_for_carry[i+1];
+        n_second = path_for_carry[i+1];
         assert(0);
       } else if (n_second != 0 && (!is_in_carry_lut(n_first) && is_in_carry_lut(n_second))) {
-        //std::cout << n_first << "(" << is_in_carry_lut(n_first) << ") " << \
+        std::cout << n_first << "(" << is_in_carry_lut(n_first) << ") " << \
           n_second << "(" << is_in_carry_lut(n_second) << ")\n";  
         n_second = 0;
         i--;
         assert(0);
       }
+
       check_cut_carry<SetLUT>(n_first, n_second, n_carryin);
+      carry_node_mapped[n_first] = true;
+      carry_node_mapped[n_second] = true;
     }
   }
 
@@ -573,6 +601,10 @@ private:
   bool is_in_carry_lut(node<Ntk> n) {
     if (!carry_cut_list[ntk.node_to_index(n)].empty()) return true;
     return false;
+  }
+
+  bool is_carry_node_mapped(node<Ntk> n) {
+    return carry_node_mapped[n];
   }
 
   template<bool ELA>
@@ -1116,17 +1148,6 @@ private:
     } );
     //std::cout << "\n";
 
-    
-
-    // Cannot do this due to immutable view
-    //if (!ps.carry_lut_combined) {
-      //std::cout << "node is " << n << " to ";
-      //auto cnodes = ordered_children(cindex_1);      
-      //auto csignal = ntk.create_maj(cnodes[0], cnodes[1], cnodes[2]);
-      //ntk.substitute_node(cindex_1, csignal);
-      //std::cout << ntk.get_node(csignal) << "\n";
-    //}
-
     carry_cut_list[index].clear();
 
     if (i < 0 || j < 0) {
@@ -1137,7 +1158,7 @@ private:
       if (SetLUT) {
         kitty::dynamic_truth_table mig_function (3);
         mig_function._bits[0]= 0x0000000000000000;
-        for (uint32_t i = 0; i < 8; i++) {
+        for (uint32_t i = 0; i < 8; i++) {    
           uint32_t a = child_complement[0]? get_not_bit(i,0):get_bit(i,0); 
           uint32_t b = child_complement[1]? get_not_bit(i,1):get_bit(i,1); 
           uint32_t c = child_complement[2]? get_not_bit(i,2):get_bit(i,2);
@@ -1780,6 +1801,7 @@ private:
   std::vector<float> flows;
   std::vector<uint32_t> delays;
   std::vector<std::vector<uint32_t>> carry_cut_list;
+  std::vector<bool> carry_node_mapped;
   std::vector<node<Ntk>> carry_nodes;
   std::vector<node<Ntk>> carry_driver_nodes;
   std::vector<std::vector<int>> carry_cut_index_list;
