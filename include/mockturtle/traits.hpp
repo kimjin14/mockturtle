@@ -38,6 +38,9 @@
 #include <kitty/dynamic_truth_table.hpp>
 #include <kitty/traits.hpp>
 
+#define LUT_DELAY 5 
+#define CARRY_DELAY 1
+
 namespace mockturtle
 {
 

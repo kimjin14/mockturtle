@@ -18,6 +18,7 @@
 #include <mockturtle/networks/klut.hpp>
 #include <mockturtle/algorithms/equivalence_checking.hpp>
 #include <mockturtle/algorithms/miter.hpp>
+#include <mockturtle/io/write_dot.hpp>
 
 #include <kitty/kitty.hpp>
 #include <kitty/isop.hpp>
@@ -55,7 +56,6 @@ int main (int argc, char *argv[]){
   lorina::diagnostic_engine diag;
   lorina::return_code result;
 
-  std::cout << argv[1] << ",";
   
   /////////////////////////////
   // Read Verilog into a MIG network.
@@ -70,7 +70,6 @@ int main (int argc, char *argv[]){
   }
 
   depth_view depth_mig { mig }; 
-  std::cout << mig.num_gates() << "," << depth_mig.depth() << ",";
   
   ///////////////////////////// 
   // Map MIG to LUT and carry
@@ -85,6 +84,7 @@ int main (int argc, char *argv[]){
   auto const& klut_carry = *klut_carry_opt;
   carry_depth_view depth_klut_carry { klut_carry }; 
   //std::cout << "lut mapping finished\n";
+  write_dot(klut_carry, "carry.dot"); 
 
   /////////////////////////////
   // Map MIG to LUT only
@@ -98,6 +98,7 @@ int main (int argc, char *argv[]){
   }
   auto const& klut = *klut_opt;
   depth_view depth_klut { klut }; 
+  write_dot(klut, "orig.dot"); 
   
   /////////////////////////////
   // Check circuit equivalence.
@@ -112,14 +113,19 @@ int main (int argc, char *argv[]){
     return 0;
   }*/
 
+  /////////////////////////////
+  // Print mapping results.
+  /////////////////////////////
+  std::cout << argv[1] << ",";
+  std::cout << mig.num_gates() << "," << depth_mig.depth() << ",";
   std::cout << klut.num_gates() << "," << depth_klut.depth() << ",";
-  std::cout << klut_carry.num_gates() << "," << float(depth_klut_carry.depth()/3.0) << "\n";
+  std::cout << klut_carry.num_gates() << "(" << klut_carry.num_carry() << ")," << float(depth_klut_carry.depth()/LUT_DELAY) << "\n";
 
   /////////////////////////////
   // Write to BLIF for VPR
   /////////////////////////////
   write_blif(klut_carry, "blif/" + getFileName(argv[1]) + "_carry.blif", "output_carry.log");  
-  //write_blif(klut, "blif/" + getFileName(argv[1]) + ".blif", "output.log");  
+  write_blif(klut, "blif/" + getFileName(argv[1]) + ".blif", "output.log");  
 
   //std::ofstream os( ("blif/" + getFileName(argv[1]) + "_carry.v").c_str(), std::ofstream::out );
   //write_verilog(mig, os);

@@ -438,7 +438,12 @@ signal create_maj( signal a, signal b, signal c )
   auto num_gates() const
   {
     return static_cast<uint32_t>(_storage->nodes.size() - _storage->inputs.size() - 2 \
-       - ceil(_carry_nodes.size()/2));
+       - _carry_nodes.size());
+  }
+
+  auto num_carry() const
+  {
+    return static_cast<uint32_t> (_carry_nodes.size());
   }
 
   uint32_t fanin_size( node const& n ) const

@@ -39,9 +39,6 @@
 #include "../utils/node_map.hpp"
 #include "immutable_view.hpp"
 
-#define LUT_DELAY 3
-#define CARRY_DELAY 1
-
 namespace mockturtle
 {
 
@@ -203,6 +200,47 @@ private:
       }
       _depth = std::max( _depth, clevel );
     } );
+    print_critical_path();
+  }
+
+  void print_critical_path_helper (uint32_t index) {
+
+    if (this->is_carry(this->index_to_node(index)) ) 
+      std::cout << " -> " << index << "*(" << _levels[index] << ")\n";
+    else
+      std::cout << " -> " << index << "(" << _levels[index] << ")\n";
+
+    if (this->is_pi(this->index_to_node(index)) || this->is_constant(this->index_to_node(index)))
+      return;
+   
+    uint32_t worst_delay = 0;
+    uint32_t critical_index = 0;
+
+    this->foreach_fanin( this->index_to_node(index), [&]( auto const& f ) {
+        const auto leaf = this->node_to_index (this->get_node(f));
+        if (_levels[leaf] > worst_delay) {
+          critical_index = leaf;
+          worst_delay = _levels[leaf];
+        }
+    } );
+    print_critical_path_helper (critical_index);
+  }
+
+  // Print the critical MIG path
+  void print_critical_path () {
+
+    std::cout << "Critical path:\n";
+  
+    uint32_t worst_delay = 0;
+    uint32_t critical_index = 0;
+    this->foreach_po( [&]( auto s ) {
+      const auto index = this->node_to_index( this->get_node( s ) );
+      if (_levels[index] > worst_delay) {
+        critical_index = index;
+        worst_delay = _levels[index];
+      }
+    });
+    print_critical_path_helper (critical_index);
   }
 
   bool _count_complements{false};
