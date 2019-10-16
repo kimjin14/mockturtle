@@ -18,6 +18,7 @@
 #include "cut_enumeration/mf_cut.hpp"
 #include <kitty/print.hpp>
 
+#define COST 3// 2// // 1// 0 
 
 namespace mockturtle
 {
@@ -60,10 +61,10 @@ struct carry_lut_mapping_params
   bool carry_mapping{true};
 
   /*! \brief Number of rounds for carry chain synthesis. */
-  uint32_t rounds_carry{3u};  
+  uint32_t rounds_carry{1u};  
   
   /*! \brief Determines whether to print carry node combined LUT fcn. */
-  bool carry_lut_combined{true};  
+  bool carry_lut_combined{false};  
 };
 
 /*! \brief Statistics for carry_lut_mapping.
@@ -154,7 +155,8 @@ public:
 
       for (uint32_t i = 0; i < ps.rounds_carry; i++) { 
 
-        if (ps.verbose) std::cout << "Carry Mapping Iteration " << iteration << " targetting delay of " << delay_lut << ".\n";
+        if (ps.verbose) std::cout << "Carry Mapping Iteration " \
+          << iteration << " targetting delay of " << delay_lut << ".\n";
         if (ps.verbose) print_state();
 
         /////////////////////////////////////////////////
@@ -170,6 +172,8 @@ public:
         ////////////////////////////////////////////////
         // Compute carry LUT mappgin
         //map_carry_lut_with_node(path_for_carry);
+
+        set_mapping_refs<false>(false);
         compute_carry_mapping<false>(path_for_carry);
         set_mapping_refs<false>(false);
         compute_mapping<false>();
@@ -214,7 +218,7 @@ public:
       compute_mapping<true>();
       set_mapping_refs<true>(true);
     }
-    print_critical_path();
+    if (ps.verbose)print_critical_path();
     derive_mapping();
     
   }
@@ -437,7 +441,7 @@ private:
           });
           ntk.foreach_po( [&]( auto const& s ) {
             if (ntk.get_node(s) == carry_node) {
-              std::cout << "\t\tflipping output " << ntk.get_node(s) << "\n";
+              if (ps.verbose && ps.verbosity > 2)std::cout << "\t\tflipping output " << ntk.get_node(s) << "\n";
               ntk.flip_complement_output(s);
             }
           });
@@ -584,7 +588,9 @@ private:
         n_second = 0;
       }
 
-      std::cout << "i " << i << ": " << n_carryin << " " << n_first << " " << n_second << "\n";
+      if (ps.verbose) {
+        std::cout << "i " << i << ": " << n_carryin << " " << n_first << " " << n_second << "\n";
+      }
 
       // This should never happen since we don't allow multiple merging
       // of carry chain to existing carry chain
@@ -892,19 +898,18 @@ private:
 
   bool check_6lut_legality (uint32_t abce0f0[5], uint32_t abde1f1[5], \
       uint32_t nshared_index1, uint32_t nshared_index2, \
-      uint32_t ntotal_index1, uint32_t ntotal_index2) {
+      uint32_t ntotal_index1, uint32_t ntotal_index2, 
+      uint32_t& nshared_matches, uint32_t& nmatches) {
 
     // At this point, both 5 LUTs are legal
     // Now we need to check for 6 LUT input legality
     // Depending on the total number of inputs, 
-    uint32_t nshared_matches = 0; 
     for (uint32_t i = 0; i < nshared_index1; i++) {
       assert (abce0f0[i] != 0);
       for (uint32_t j = 0; j < nshared_index2; j++) {
         if (abce0f0[i] == abde1f1[j]) nshared_matches++;
       }
     }
-    uint32_t nmatches = 0; 
     for (uint32_t i = 0; i < 5; i++) {
       if (abce0f0[i] == 0) continue;
       for (uint32_t j = 0; j < 5; j++) {
@@ -1374,23 +1379,31 @@ private:
 
   }
 
+  // Find the delay of the specific cut
+  // It should look for the slowest of all nodes
   uint32_t delay_of_cut (uint32_t index, uint32_t cut_index) {
 
-   uint32_t best_time{std::numeric_limits<uint32_t>::max()}; 
-      for (uint32_t cut = 0; cut < cuts.cuts(index)[cut_index].size(); cut++) {
-        if (delays[cut] < best_time) {
-          best_time = delays[cut];
+   uint32_t cut_delay = 0; 
+
+      for (uint32_t cut: cuts.cuts(index)[cut_index]) {
+        if (delays[cut] > cut_delay) {
+          cut_delay = delays[cut];
         }
       }
-
-      return best_time;
+ 
+    if (cut_delay == 0)
+      return 1;
+    else {
+      return cut_delay;
+    }
   }
 
-  template <uint32_t cost_type> uint32_t cost_of_cuts(uint32_t index1_1, uint32_t index1_2,
+  template <uint32_t cost_type> double cost_of_cuts(uint32_t index1, uint32_t index2,
+      uint32_t index1_1, uint32_t index1_2,
       uint32_t index2_1, uint32_t index2_2, uint32_t i1, uint32_t i2, uint32_t j1, uint32_t j2,
-      uint32_t nshared1, uint32_t nshared2, uint32_t ntotal1, uint32_t ntotal2) {
+      uint32_t nshared1, uint32_t nshared2, uint32_t ntotal1, uint32_t ntotal2, uint32_t nshared) {
 
-    uint32_t cost = 0;
+    double cost = 0;
       
     if (cost_type == 0) {
       cost += cuts.cuts(index1_1)[i1].size() + cuts.cuts(index1_2)[i2].size();
@@ -1398,21 +1411,31 @@ private:
 
     } else if (cost_type == 1) { // Best Delay
   
-      cost += (delay-delay_of_cut (index1_1, i1));
-      cost += (delay-delay_of_cut (index1_2, i2));
-      cost += (delay-delay_of_cut (index2_1, j1));
-      cost += (delay-delay_of_cut (index2_2, j2));
+      cost += (1.0/(double)delay_of_cut (index1_1, i1));
+      cost += (1.0/(double)delay_of_cut (index1_2, i2));
+      cost += (1.0/(double)delay_of_cut (index2_1, j1));
+      cost += (1.0/(double)delay_of_cut (index2_2, j2));
 
     } else if (cost_type == 2) { // Most Number of Shared Inputs
-
+  
+      cost += 2*nshared; 
       cost += nshared1;
       cost += nshared2;
-       
-      
+    
+    } else if (cost_type == 3) { // Delay with shared input
+
+      cost += (1/delay_of_cut (index1_1, i1));
+      cost += (1/delay_of_cut (index1_2, i2));
+      cost += (1/delay_of_cut (index2_1, j1));
+      cost += (1/delay_of_cut (index2_2, j2));
+
+      cost += 0.5*(nshared + nshared + nshared2); 
+
     } else {
       assert(0);
     }
-    
+   
+     
   
     return cost;
   }
@@ -1430,12 +1453,12 @@ private:
   int check_cut_carry(uint32_t index1, uint32_t index2, uint32_t indexc) {
 
     // Cost depends on what to optimize for.
-    int32_t cost = 0;
-    int32_t max_cost = 0;
-    int32_t max_i = -1;
-    int32_t max_j = -1;
-    int32_t max_k = -1;
-    int32_t max_l = -1;
+    double cost = 0;
+    double max_cost = -1;
+    uint32_t max_i = -1;
+    uint32_t max_j = -1;
+    uint32_t max_k = -1;
+    uint32_t max_l = -1;
 
     node<Ntk> index1_child[2] = {0};
     node<Ntk> index2_child[2] = {0};
@@ -1480,8 +1503,9 @@ private:
           } else continue;
         } 
 
+        uint32_t nshared = 0; uint32_t ntotal = 0;
         if (!check_6lut_legality(abce0f0, abde1f1, nshared_index1, nshared_index2, \
-          ntotal_index1, ntotal_index2)) continue;
+          ntotal_index1, ntotal_index2, nshared, ntotal)) continue;
 
         total_num_legal_cuts++;
 
@@ -1489,27 +1513,27 @@ private:
         // Checking input requirements
         //////////////////////////////// 
 
-        uint32_t cost = cost_of_cuts<2>(index1_child[0], index1_child[1],
+        double cost = cost_of_cuts<COST>(index1, index2, index1_child[0], index1_child[1],
             index2_child[0], index2_child[1], cut_index1_1, cut_index1_2, 
             cut_index2_1, cut_index2_2, nshared_index1, nshared_index2, 
-            ntotal_index1, ntotal_index2);
+            ntotal_index1, ntotal_index2, nshared);
 
 
-        if (cost > max_cost) {
+        if (cost >max_cost) {
           max_cost = cost;
-            max_i = cut_index1_1;
-            max_j = cut_index1_2;
-            max_k = cut_index2_1;
-            max_l = cut_index2_2;
+          max_i = cut_index1_1;
+          max_j = cut_index1_2;
+          max_k = cut_index2_1;
+          max_l = cut_index2_2;
         }
 
         if (ps.verbose && ps.verbosity > 2) {
           std::cout << "Cut " << cut_index1_1 << " " << cut_index1_2 << " " << cut_index2_1 << " " << cut_index2_2 << ": ";
           std::cout << cost << "\n";
-          std::cout << "\t" << cuts.cuts(index1_child[0])[cut_index1_1] << "\n";
-          std::cout << "\t" << cuts.cuts(index1_child[1])[cut_index1_2] << "\n";
-          std::cout << "\t" << cuts.cuts(index2_child[0])[cut_index2_1] << "\n";
-          std::cout << "\t" << cuts.cuts(index2_child[1])[cut_index2_2] << "\n";
+          std::cout << "\t" << cuts.cuts(index1_child[0])[cut_index1_1] << " " << delays[index1]  << " " << cuts.cuts(index1_child[0])[cut_index1_1]->data.delay << "\n";
+          std::cout << "\t" << cuts.cuts(index1_child[1])[cut_index1_2] << " " << delays[index1]  << " " << cuts.cuts(index1_child[1])[cut_index1_2]->data.delay << "\n";
+          std::cout << "\t" << cuts.cuts(index2_child[0])[cut_index2_1] << " " << delays[index2] << " " <<  cuts.cuts(index2_child[0])[cut_index2_1]->data.delay << "\n";
+          std::cout << "\t" << cuts.cuts(index2_child[1])[cut_index2_2] << " " << delays[index2] << " " <<  cuts.cuts(index2_child[1])[cut_index2_2]->data.delay << "\n";
         }
 
           }
@@ -1521,8 +1545,11 @@ private:
     //carry_cut_index_list[index1].push_back(max_j);
     //carry_cut_index_list[index2].push_back(max_k);
     //carry_cut_index_list[index2].push_back(max_l);
+    if (ps.verbose) {
+      std::cout << "Total number of cuts are " << total_num_cuts << " and " << total_num_legal_cuts << " were legal\n";
+      std::cout << "Selected cut is " << max_i << " " << max_j << " " << max_k << " " << " " <<  max_l << "\n";
+    }
 
-    std::cout << "Total number of cuts are " << total_num_cuts << " and " << total_num_legal_cuts << " were legal\n";
     insert_cut_to_carry_list<SetLUT>(index1, indexc, index1_child[0], index1_child[1], max_i, max_j); 
     insert_cut_to_carry_list<SetLUT>(index2, index1, index2_child[0], index2_child[1], max_k, max_l); 
 
