@@ -206,9 +206,9 @@ private:
   void print_critical_path_helper (uint32_t index) {
 
     if (this->is_carry(this->index_to_node(index)) ) 
-      std::cout << " -> " << index << "*(" << _levels[index] << ")\n";
+      std::cout << " -> " << index << "*(" << _levels[index]/LUT_DELAY << ")\n";
     else
-      std::cout << " -> " << index << "(" << _levels[index] << ")\n";
+      std::cout << " -> " << index << "(" << _levels[index]/LUT_DELAY << ")\n";
 
     if (this->is_pi(this->index_to_node(index)) || this->is_constant(this->index_to_node(index)))
       return;
