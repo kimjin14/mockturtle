@@ -54,7 +54,7 @@ struct lut_mapping_params
   lut_mapping_params()
   {
     cut_enumeration_ps.cut_size = 6;
-    cut_enumeration_ps.cut_limit = 8;
+    cut_enumeration_ps.cut_limit = 100;
   }
 
   /*! \brief Parameters for cut enumeration
