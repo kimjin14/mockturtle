@@ -84,7 +84,7 @@ struct cut_enumeration_update_cut<cut_enumeration_mf_cut>
       flow += best_leaf_cut->data.flow;
     }
 
-    cut->data.delay = LUT_DELAY + delay;
+    cut->data.delay = 1 + delay;
     cut->data.flow = flow / ntk.fanout_size( n );
   }
 };

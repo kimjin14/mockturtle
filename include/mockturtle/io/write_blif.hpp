@@ -128,10 +128,12 @@ void write_blif( Ntk const& ntk, std::ostream& os, std::ostream& os_log  )
   os << ".names n1\n";
   os << "1\n";
 
-  uint32_t next_node = topo_ntk.size();
-  std::vector<uint32_t> carry_1;
-  std::vector<uint32_t> carry_2;
-  std::vector<uint32_t> carry_3;
+  // Place all nodes into a vector first
+  // Number of list can change depending on how many carry chains
+  std::vector< std::vector<uint32_t> >carry_chains;
+  //std::vector<uint32_t> carry_1;
+  //std::vector<uint32_t> carry_2;
+  //std::vector<uint32_t> carry_3;
 
   std::vector<uint32_t> adder_cout;
   std::vector<uint32_t> adder_a;
@@ -140,6 +142,7 @@ void write_blif( Ntk const& ntk, std::ostream& os, std::ostream& os_log  )
 
   uint32_t separate_chain = 0;
 
+  uint32_t next_node = topo_ntk.size();
   topo_ntk.foreach_node( [&]( auto const& n ) {
 
     os_log << n << ":\n";    
@@ -158,25 +161,43 @@ void write_blif( Ntk const& ntk, std::ostream& os, std::ostream& os_log  )
       uint32_t should_be_constant_1 = 0;
 
       auto const child = topo_ntk.node_to_index(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1) );
+      bool inserted = false; 
+        for (auto& carry_chain: carry_chains) {
+          std::cout << "check chains " << carry_chain[carry_chain.size()-1] << " is " << child << "\n";
+          if (!carry_chain.empty() && carry_chain[carry_chain.size()-1] == child) {
+            std::cout << "belongs in this one\n";
+            carry_chain.push_back(n);
+            inserted = true;
+          }
+        }
+      if ( !inserted ) {
+          std::cout << "add chain\n";
+          std::vector<uint32_t> new_chain;
+          new_chain.push_back(n);
+          carry_chains.push_back(new_chain);
+      } 
 
-      if (carry_1.empty()) {
-        carry_1.push_back( n );
-      } else if (!carry_1.empty() && carry_1[carry_1.size()-1] == child) {
-        carry_1.push_back( n );
-      } else if (carry_2.empty()) {
-        carry_2.push_back( n );
-      } else if (!carry_2.empty() && carry_2[carry_2.size()-1] == child) {
-        carry_2.push_back( n );
-      } else if (carry_3.empty()) {
-        carry_3.push_back( n );
-      } else if (!carry_3.empty() && carry_3[carry_3.size()-1] == child) {
-        carry_3.push_back( n );
-      } else {
-        assert(0);
+      for (auto carry_chain: carry_chains) {
+        std::cout << "chain is size " << carry_chain.size() << "\n";
       }
+      //if (carry_1.empty()) {
+      //  carry_1.push_back( n );
+      //} else if (!carry_1.empty() && carry_1[carry_1.size()-1] == child) {
+      //  carry_1.push_back( n );
+      //} else if (carry_2.empty()) {
+      //  carry_2.push_back( n );
+      //} else if (!carry_2.empty() && carry_2[carry_2.size()-1] == child) {
+      //  carry_2.push_back( n );
+      //} else if (carry_3.empty()) {
+      //  carry_3.push_back( n );
+      //} else if (!carry_3.empty() && carry_3[carry_3.size()-1] == child) {
+      //  carry_3.push_back( n );
+      //} else {
+      //  assert(0);
+      //}
 
       return;
-
+/*
       os << (".subckt adder_lut ");
 
       uint32_t input_count = 0;
@@ -208,7 +229,7 @@ void write_blif( Ntk const& ntk, std::ostream& os, std::ostream& os_log  )
       }
 
       separate_chain++;
-
+*/
       //}
       if (0) {
       // Separate cubes into upper and lower LUT
@@ -314,44 +335,46 @@ void write_blif( Ntk const& ntk, std::ostream& os, std::ostream& os_log  )
     }
   });
 
-  separate_chain = 0;
-  next_node = topo_ntk.size();
-  for (auto n: carry_1) {
+  for (auto carry_chain: carry_chains) {
+    separate_chain = 0;
+    next_node = topo_ntk.size();
+    for (auto n: carry_chain) {
 
-    if (separate_chain == 10) {
-      os << fmt::format(".names n{} n{}\n", topo_ntk.node_to_index(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1) ), next_node);
-      os << fmt::format("1 1\n\n", topo_ntk.node_to_index(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1) ), next_node);
-      separate_chain = 0;
-    }
-
-    os << (".subckt adder_lut ");
-
-    uint32_t input_count = 0;
-    topo_ntk.foreach_fanin( n, [&]( auto const& c ) {
-      if (input_count != topo_ntk.fanin_size(n)-1) {
-        os << fmt::format( "in{}=n{} ", input_count, topo_ntk.node_to_index( c ) );
-        input_count++;
+      if (separate_chain == 10) {
+        os << fmt::format(".names n{} n{}\n", topo_ntk.node_to_index(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1) ), next_node);
+        os << fmt::format("1 1\n\n", topo_ntk.node_to_index(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1) ), next_node);
+        separate_chain = 0;
       }
-    });
-    for (; input_count < 5; input_count++)
-      os << fmt::format( "in{}=unconn ", input_count );
-    
-    assert(topo_ntk.fanin_size(n) <= 6); 
-    if (topo_ntk.is_pi(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1))) {
-      os << fmt::format("cin=n{} ", topo_ntk.node_to_index(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1) ) );
-    } else if (separate_chain == 0) { 
-      os << fmt::format("cin=n{} ", next_node++);
-    } else {
-      os << fmt::format("cin=c{} ", topo_ntk.node_to_index(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1) ) );
+
+      os << (".subckt adder_lut ");
+
+      uint32_t input_count = 0;
+      topo_ntk.foreach_fanin( n, [&]( auto const& c ) {
+        if (input_count != topo_ntk.fanin_size(n)-1) {
+          os << fmt::format( "in{}=n{} ", input_count, topo_ntk.node_to_index( c ) );
+          input_count++;
+        }
+      });
+      for (; input_count < 5; input_count++)
+        os << fmt::format( "in{}=unconn ", input_count );
+      
+      assert(topo_ntk.fanin_size(n) <= 6); 
+      if (topo_ntk.is_pi(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1))) {
+        os << fmt::format("cin=n{} ", topo_ntk.node_to_index(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1) ) );
+      } else if (separate_chain == 0) { 
+        os << fmt::format("cin=n{} ", next_node++);
+      } else {
+        os << fmt::format("cin=c{} ", topo_ntk.node_to_index(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1) ) );
+      }
+
+      os << fmt::format("cout=c{} ", topo_ntk.node_to_index( n ) );
+      os << fmt::format("sumout=n{}\n", topo_ntk.node_to_index( n ) );
+
+      separate_chain++;
     }
-
-    os << fmt::format("cout=c{} ", topo_ntk.node_to_index( n ) );
-    os << fmt::format("sumout=n{}\n", topo_ntk.node_to_index( n ) );
-
-    separate_chain++;
+    os << fmt::format("\n");
   }
-  os << fmt::format("\n");
-
+/*
   separate_chain = 0;
   for (auto n: carry_2) {
 
@@ -427,7 +450,7 @@ void write_blif( Ntk const& ntk, std::ostream& os, std::ostream& os_log  )
 
   }
   os << fmt::format("\n");
-
+*/
   for (uint32_t i = 0; 0 && i < adder_cout.size(); i++) {
     // Print mig node
     if (true) {
