@@ -144,14 +144,15 @@ public:
     set_mapping_refs<false>();
     //print_state();
 
+    //compute_mapping<false>(false);
     while ( iteration < ps.rounds )
     {
-      compute_mapping<false>();
+      compute_mapping<false>(true);
     }
 
     while ( iteration < ps.rounds + ps.rounds_ela )
     {
-      compute_mapping<true>();
+      compute_mapping<true>(true);
     }
 
     derive_mapping();
@@ -184,13 +185,13 @@ private:
   }
 
   template<bool ELA>
-  void compute_mapping()
+  void compute_mapping( bool area )
   {
     for ( auto const& n : top_order )
     {
       if ( ntk.is_constant( n ) || ntk.is_pi( n ) )
         continue;
-      compute_best_cut<ELA>( ntk.node_to_index( n ) );
+      compute_best_cut<ELA>( ntk.node_to_index( n ), area );
     }
     set_mapping_refs<ELA>();
     //print_state();
@@ -342,7 +343,7 @@ private:
   }
 
   template<bool ELA>
-  void compute_best_cut( uint32_t index )
+  void compute_best_cut( uint32_t index, bool area )
   {
     constexpr auto mf_eps{0.005f};
 
@@ -376,11 +377,20 @@ private:
         std::tie( flow, time ) = cut_flow( *cut );
       }
 
-      if ( best_cut == -1 || best_flow > flow + mf_eps || ( best_flow > flow - mf_eps && best_time > time ) )
-      {
-        best_cut = cut_index;
-        best_flow = flow;
-        best_time = time;
+      if (area) {
+        if ( best_cut == -1 || best_flow > flow + mf_eps || ( best_flow > flow - mf_eps && best_time > time ) )
+        {
+          best_cut = cut_index;
+          best_flow = flow;
+          best_time = time;
+        }
+      } else {
+        if ( best_cut == -1 || best_time > time || ( best_time > time &&  best_flow > flow - mf_eps ) )
+        {
+          best_cut = cut_index;
+          best_flow = flow;
+          best_time = time;
+        }
       }
     }
 
