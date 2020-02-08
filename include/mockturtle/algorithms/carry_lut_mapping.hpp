@@ -449,61 +449,28 @@ private:
   void compute_carry_mapping (std::vector<node<Ntk>> path_for_carry_chain)
   {
 
-    uint32_t starting_index = 0;
     node<Ntk> n_carryin, n_first, n_second;
 
     // This function should not be called with an empty carry path
     assert(!path_for_carry_chain.empty());
 
-    // If the first node is a PI (first path) or in carry LUT (subsequent path), 
-    // first node to be mapped should start from the next one. 
-    // It should be guranteed that this is NOT already mapped.
-    if (ntk.is_pi(path_for_carry_chain[0]) || is_in_carry_lut(path_for_carry_chain[0])) {
-      starting_index = 1;
-    }
-
     // Map nodes in pairs (i+=2) since each ALM has 2 adders
-    for (uint32_t i = starting_index; i < path_for_carry_chain.size(); i+=2) {
+    for (uint32_t i = 1; i < path_for_carry_chain.size(); i+=2) {
 
       // Assign carryin, 1st/2nd node
-      // for mapping.
-      if (i == 0) n_carryin = 0;
-      else n_carryin = path_for_carry_chain[i-1];
+      n_carryin = path_for_carry_chain[i-1];
       n_first = path_for_carry_chain[i];
-      n_second = path_for_carry_chain[i+1];
-
-      // Since we are incrementing by 2,
-      // if i is equal to the path size - 1,
-      // we have odd number of nodes.
-      if (i == path_for_carry_chain.size()-1 || is_carry_node_mapped(n_second)) {
-        n_second = 0;
-      }
+      n_second = (i == path_for_carry_chain.size()-1) ? 0 : path_for_carry_chain[i+1];
 
       if (ps.verbose && ps.verbosity > 3) {
         std::cout << "i " << i << ": " << n_carryin << " " << n_first << " " << n_second << "\n";
       }
 
-      // This should never happen since we don't allow multiple merging
-      // of carry chain to existing carry chain
-      if (n_second != 0 && (is_in_carry_lut(n_first) && !is_in_carry_lut(n_second))) {
-        std::cout << n_first << "(" << is_in_carry_lut(n_first) << ") " << \
-          n_second << "(" << is_in_carry_lut(n_second) << ")\n";  
-        i++;
-        n_first = path_for_carry_chain[i];
-        n_second = path_for_carry_chain[i+1];
-        assert(0);
-      } else if (n_second != 0 && (!is_in_carry_lut(n_first) && is_in_carry_lut(n_second))) {
-        std::cout << n_first << "(" << is_in_carry_lut(n_first) << ") " << \
-          n_second << "(" << is_in_carry_lut(n_second) << ")\n";  
-        n_second = 0;
-        i--;
-        assert(0);
-      }
-
       check_cut_carry<SetLUT>(n_first, n_second, n_carryin);
       //select_no_cuts<SetLUT>(n_first, n_second, n_carryin);
-      carry_node_mapped[n_first] = true;
-      carry_node_mapped[n_second] = true;
+  
+      //carry_node_mapped[n_first] = true;
+      //carry_node_mapped[n_second] = true;
     }
   }
 
