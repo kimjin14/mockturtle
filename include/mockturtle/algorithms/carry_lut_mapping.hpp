@@ -116,10 +116,8 @@ public:
         flows( ntk.size() ),
         delays( ntk.size() ),
         carry_cut_list( ntk.size() ),
-        carry_node_mapped ( ntk.size() ),
         carry_nodes( ntk.size(), 0),
         carry_driver_nodes( ntk.size(), 0),
-        carry_cut_index_list ( ntk.size() ),
         carry_paths( ),
         cuts( cut_enumeration<Ntk, StoreFunction, CutData>( ntk, ps.cut_enumeration_ps ) )
   {
@@ -420,9 +418,7 @@ private:
   ///////////////////////////////////////////////////////////////
 
   void init_carry_chain_mapping() {
-    ntk.foreach_node( [this]( auto n ) {
-      carry_node_mapped[n] = false; 
-    } );
+    //do nothing for now
   }
 
   void init_nodes() {
@@ -466,11 +462,8 @@ private:
         std::cout << "i " << i << ": " << n_carryin << " " << n_first << " " << n_second << "\n";
       }
 
-      check_cut_carry<SetLUT>(n_first, n_second, n_carryin);
+      compute_carry_LUT_mapping<SetLUT>(n_first, n_second, n_carryin);
       //select_no_cuts<SetLUT>(n_first, n_second, n_carryin);
-  
-      //carry_node_mapped[n_first] = true;
-      //carry_node_mapped[n_second] = true;
     }
   }
 
@@ -783,37 +776,6 @@ private:
     }
     return true;
   }
-  void list_covered_nodes(node<Ntk> n, cut_t const& cut) {
-
-    if (cut.size() == 1) {
-      for (auto const &l : cut) {
-        if (l == ntk.node_to_index(n)) {
-          return;
-        } else {
-          assert(0);
-        }
-      }
-    } 
-
-    ntk.set_visited(n,1);
-    
-    carry_cut_list[ntk.node_to_index(n)].push_back(1);
-
-    for (uint32_t i = 0; i < ntk.fanin_size(n); i++) {
-      bool found = false;
-      auto c = ntk.get_children(n,i);
-      for ( auto const& l : cut ) {
-        if (l == ntk.node_to_index(c)) {
-          found = true;
-        } 
-      } 
-      if (!found && !ntk.is_pi(c) && !ntk.is_constant(c) && !(ntk.visited(c)>0)) {
-        carry_cut_list[ntk.node_to_index(c)].push_back(1);
-        list_covered_nodes(c, cut);
-      }
-    }
-  }
-
   uint32_t get_bit (uint32_t val, uint32_t pos) {
     return (val >> pos)&0x1;
   }
@@ -1185,121 +1147,177 @@ private:
     return cost;
   }
 
-  // This function takes 2 index with its carry-in index and figurse out 
-  // if it cuts can be mapped to LUTs before carry node
-  // Check if inputs are legal
-  // each index can only have 5 unique inputs
-  // index1 can't have more than 5 unique inputs
-  //    e0 c b a
-  //    f0 c b a
-  //    e1 d b a
-  //    f1 d b a
-  template <bool SetLUT>
-  int check_cut_carry(uint32_t index1, uint32_t index2, uint32_t indexc) {
+  uint32_t number_of_match_in_cuts (auto cut_1, auto cut_2) {
+    uint32_t match = 0;
+    for (auto leaf_1: cut_1) {
+      for (auto leaf_2: cut_2) {
+        if (leaf_1 == leaf_2) match++;
+      }
+    }
+    return match;
+  }
 
-    // Cost depends on what to optimize for.
+  void match_vector (std::vector<node<Ntk>> return_vector, auto cut_1, auto cut_2) {
+    uint32_t match = 0;
+    for (auto leaf_1: cut_1) {
+      for (auto leaf_2: cut_2) {
+        if (leaf_1 == leaf_2) return_vector.push_back(leaf_1);
+      }
+    }
+  }
+
+  bool check_cut_legality(uint32_t i1_c0, uint32_t i1_c1, uint32_t i2_c0, uint32_t i2_c1,
+          uint32_t cut_i1_1, uint32_t cut_i1_2, uint32_t cut_i2_1, uint32_t cut_i2_2) {
+
+    auto cut_1_1 = cuts.cuts(i1_c0)[cut_i1_1];
+    auto cut_1_2 = cuts.cuts(i1_c1)[cut_i1_2];
+    auto cut_2_1 = cuts.cuts(i2_c0)[cut_i2_1];
+    auto cut_2_2 = cuts.cuts(i2_c1)[cut_i2_2];
+    uint32_t cut_size_1_1 = cut_1_1.size();
+    uint32_t cut_size_1_2 = cut_1_2.size();
+    uint32_t cut_size_2_1 = cut_2_1.size();
+    uint32_t cut_size_2_2 = cut_2_2.size();
+
+    // 4 pins to each LUT
+    if ((cut_size_1_1 > 4)||(cut_size_1_2 > 4)||(cut_size_2_1 > 4)||(cut_size_2_2 > 4))
+      return false;
+
+    uint32_t nmatch_1_1_1_2 = number_of_match_in_cuts(cut_1_1, cut_1_2);
+    uint32_t nmatch_1_1_2_1 = number_of_match_in_cuts(cut_1_1, cut_2_1);
+    uint32_t nmatch_1_1_2_2 = number_of_match_in_cuts(cut_1_1, cut_2_2);
+    uint32_t nmatch_1_2_2_1 = number_of_match_in_cuts(cut_1_2, cut_2_1);
+    uint32_t nmatch_1_2_2_2 = number_of_match_in_cuts(cut_1_2, cut_2_2);
+    uint32_t nmatch_2_1_2_2 = number_of_match_in_cuts(cut_2_1, cut_2_2);
+
+    // 5 unique pins to top/bottom half of LUT
+    if ((cut_size_1_1 + cut_size_1_2 - nmatch_1_1_1_2) > 5){
+      return false;
+    }
+    if ((cut_size_2_1 + cut_size_2_2 - nmatch_2_1_2_2) > 5) {
+      return false;
+    }
+
+    // how many a/b connections does top/bottom half of LUT need?
+    uint32_t abc_1 = std::max(0, int(3-int(4-cut_size_1_1)));
+    uint32_t abc_2 = std::max(0, int(3-int(4-cut_size_1_2)));
+    uint32_t abd_1 = std::max(0, int(3-int(4-cut_size_2_1)));
+    uint32_t abd_2 = std::max(0, int(3-int(4-cut_size_2_2)));
+
+    if (int(abc_1 + abc_2 - nmatch_1_1_1_2) > 3) {
+      return false;
+    }
+    if (int(abd_1 + abd_2 - nmatch_2_1_2_2) > 3) {
+      return false;
+    }
+    
+    // TODO: missing a/b shared pins condition
+    return true;
+  }
+
+  // This function takes 2 index with its carry-in index and figures out 
+  // if it cuts can be mapped to LUTs before carry node and the cost
+  template <bool SetLUT>
+  int compute_carry_LUT_mapping(uint32_t i1, uint32_t i2, uint32_t ic) {
+
     double cost = 0;
     double max_cost = -1;
-    uint32_t max_i = -1;
-    uint32_t max_j = -1;
-    uint32_t max_k = -1;
-    uint32_t max_l = -1;
+    int32_t max_i1_1 = -1;
+    int32_t max_i1_2 = -1;
+    int32_t max_i2_1 = -1;
+    int32_t max_i2_2 = -1;
 
-    node<Ntk> index1_child[2] = {0};
-    node<Ntk> index2_child[2] = {0};
-
-    get_children_node (index1_child, index1, indexc); 
-    if (index2 != 0) get_children_node (index2_child, index2, index1); 
+    // Get relevant children node for mapping
+    node<Ntk> i1_child[2] = {0};
+    node<Ntk> i2_child[2] = {0};
+    get_children_node (i1_child, i1, ic); 
+    if (i2 != 0) get_children_node (i2_child, i2, i1); 
 
     uint32_t total_num_cuts = 0;
     uint32_t total_num_legal_cuts = 0;
 
-    for (uint32_t cut_index1_1 = 0; cut_index1_1 < cuts.cuts(index1_child[0]).size(); cut_index1_1++) {
-      for (uint32_t cut_index1_2 = 0; cut_index1_2 < cuts.cuts(index1_child[1]).size(); cut_index1_2++) {
-        for (uint32_t cut_index2_1 = 0; cut_index2_1 < cuts.cuts(index2_child[0]).size(); cut_index2_1++) {
-          for (uint32_t cut_index2_2 = 0; cut_index2_2 < cuts.cuts(index2_child[1]).size(); cut_index2_2++) {
+    for (uint32_t cut_i1_1 = 0; cut_i1_1 < cuts.cuts(i1_child[0]).size(); cut_i1_1++) {
+      for (uint32_t cut_i1_2 = 0; cut_i1_2 < cuts.cuts(i1_child[1]).size(); cut_i1_2++) {
+        for (uint32_t cut_i2_1 = 0; cut_i2_1 < cuts.cuts(i2_child[0]).size(); cut_i2_1++) {
+          for (uint32_t cut_i2_2 = 0; cut_i2_2 < cuts.cuts(i2_child[1]).size(); cut_i2_2++) {
 
         total_num_cuts++;
 
         // Array holding the nodes to the halfs of ALM as separate 4-LUT
         // [0][0] and [1][0] contains # of input
-        uint32_t index1_child_cuts[2][5] = {0}; 
-        uint32_t index2_child_cuts[2][5] = {0}; 
+        uint32_t i1_child_cuts[2][5] = {0}; 
+        uint32_t i2_child_cuts[2][5] = {0}; 
 
         uint32_t abce0f0[5] = {0};
         uint32_t abde1f1[5] = {0};
   
-        uint32_t ntotal_index1 = 0; uint32_t ntotal_index2 = 0;
-        uint32_t nshared_index1 = 0; uint32_t nshared_index2 = 0;
+        uint32_t ntotal_i1 = 0; uint32_t ntotal_i2 = 0;
+        uint32_t nshared_i1 = 0; uint32_t nshared_i2 = 0;
 
+        bool newcheck = check_cut_legality(i1_child[0], i1_child[1], i2_child[0], i2_child[1], \
+          cut_i1_1, cut_i1_2, cut_i2_1, cut_i2_2);
 
+        bool oldcheck = true;          
         ////////////////////////////////
         // Checking input requirements
         //////////////////////////////// 
-        if (insert_cuts_to_array (index1_child_cuts, index1, indexc, cut_index1_1, cut_index1_2)) {
-          if (!check_5lut_legality (index1_child_cuts, abce0f0, &nshared_index1, &ntotal_index1))
-            continue;
-        } else continue;
+        if (insert_cuts_to_array (i1_child_cuts, i1, ic, cut_i1_1, cut_i1_2)) {
+          if (!check_5lut_legality (i1_child_cuts, abce0f0, &nshared_i1, &ntotal_i1))
+            oldcheck = false;
+        } else oldcheck = false;
 
-        // if index2 is 0, it's not used 
-        if (index2 != 0) {
-          if (insert_cuts_to_array (index2_child_cuts, index2, index1, cut_index2_1, cut_index2_2)) { 
-            if (!check_5lut_legality (index2_child_cuts, abde1f1, &nshared_index2, &ntotal_index2))
-              continue;
-          } else continue;
+        // if i2 is 0, it's not used 
+        if (i2 != 0) {
+          if (insert_cuts_to_array (i2_child_cuts, i2, i1, cut_i2_1, cut_i2_2)) { 
+            if (!check_5lut_legality (i2_child_cuts, abde1f1, &nshared_i2, &ntotal_i2))
+              oldcheck = false;
+          } else oldcheck = false;
         } 
 
         uint32_t nshared = 0; uint32_t ntotal = 0;
-        if (!check_6lut_legality(abce0f0, abde1f1, nshared_index1, nshared_index2, \
-          ntotal_index1, ntotal_index2, nshared, ntotal)) continue;
+        if (!check_6lut_legality(abce0f0, abde1f1, nshared_i1, nshared_i2, \
+          ntotal_i1, ntotal_i2, nshared, ntotal)) {
+          oldcheck = false;
+        }
 
+        // TODO: when new check is finished
+        if (!oldcheck) continue;
         total_num_legal_cuts++;
 
         ////////////////////////////////
         // Calculating cost of cut 
         //////////////////////////////// 
-
-        double cost = cost_of_cuts<COST>(index1, index2, index1_child[0], index1_child[1],
-            index2_child[0], index2_child[1], cut_index1_1, cut_index1_2, 
-            cut_index2_1, cut_index2_2, nshared_index1, nshared_index2, 
-            ntotal_index1, ntotal_index2, nshared);
+        double cost = cost_of_cuts<COST>(i1, i2, i1_child[0], i1_child[1],
+            i2_child[0], i2_child[1], cut_i1_1, cut_i1_2, 
+            cut_i2_1, cut_i2_2, nshared_i1, nshared_i2, 
+            ntotal_i1, ntotal_i2, nshared);
 
         if (cost > max_cost) {
           max_cost = cost;
-          max_i = cut_index1_1;
-          max_j = cut_index1_2;
-          max_k = cut_index2_1;
-          max_l = cut_index2_2;
+          max_i1_1 = cut_i1_1;
+          max_i1_2 = cut_i1_2;
+          max_i2_1 = cut_i2_1;
+          max_i2_2 = cut_i2_2;
         }
-
         if (ps.verbose && ps.verbosity > 3) {
-          std::cout << "Cut " << cut_index1_1 << " " << cut_index1_2 << " " << cut_index2_1 << " " << cut_index2_2 << ": ";
+          std::cout << "Cut " << cut_i1_1 << " " << cut_i1_2 << " " << cut_i2_1 << " " << cut_i2_2 << ": ";
           std::cout << cost << "\n";
-          if (!ntk.is_constant(index1_child[0]))
-            std::cout << "\t" << cuts.cuts(index1_child[0])[cut_index1_1] << " " << cuts.cuts(index1_child[0])[cut_index1_1]->data.delay*20 << "\n";
-          if (!ntk.is_constant(index1_child[1]))
-            std::cout << "\t" << cuts.cuts(index1_child[1])[cut_index1_2] << " " << cuts.cuts(index1_child[1])[cut_index1_2]->data.delay*20 << "\n";
-          if (!ntk.is_constant(index2_child[0]))
-            std::cout << "\t" << cuts.cuts(index2_child[0])[cut_index2_1] << " " << cuts.cuts(index2_child[0])[cut_index2_1]->data.delay*20 << "\n";
-          if (!ntk.is_constant(index2_child[1]))
-            std::cout << "\t" << cuts.cuts(index2_child[1])[cut_index2_2] << " " << cuts.cuts(index2_child[1])[cut_index2_2]->data.delay*20 << "\n";
+          std::cout << "\t" << cuts.cuts(i1_child[0])[cut_i1_1] << " " << cuts.cuts(i1_child[0])[cut_i1_1]->data.delay*20 << "\n";
+          std::cout << "\t" << cuts.cuts(i1_child[1])[cut_i1_2] << " " << cuts.cuts(i1_child[1])[cut_i1_2]->data.delay*20 << "\n";
+          std::cout << "\t" << cuts.cuts(i2_child[0])[cut_i2_1] << " " << cuts.cuts(i2_child[0])[cut_i2_1]->data.delay*20 << "\n";
+          std::cout << "\t" << cuts.cuts(i2_child[1])[cut_i2_2] << " " << cuts.cuts(i2_child[1])[cut_i2_2]->data.delay*20 << "\n";
         }
           }
         }
       }
     }
 
-    //carry_cut_index_list[index1].push_back(max_i);
-    //carry_cut_index_list[index1].push_back(max_j);
-    //carry_cut_index_list[index2].push_back(max_k);
-    //carry_cut_index_list[index2].push_back(max_l);
     if (ps.verbose && ps.verbosity > 3) {
       std::cout << "Total number of cuts are " << total_num_cuts << " and " << total_num_legal_cuts << " were legal\n";
-      std::cout << "Selected cut is " << max_i << " " << max_j << " " << max_k << " " <<  max_l << "\n";
+      std::cout << "Selected cut is " << max_i1_1 << " " << max_i1_2 << " " << max_i2_1 << " " <<  max_i2_2 << "\n";
     }
 
-    insert_cut_to_carry_list<SetLUT>(index1, indexc, index1_child[0], index1_child[1], max_i, max_j); 
-    insert_cut_to_carry_list<SetLUT>(index2, index1, index2_child[0], index2_child[1], max_k, max_l); 
+    insert_cut_to_carry_list<SetLUT>(i1, ic, i1_child[0], i1_child[1], max_i1_1, max_i1_2); 
+    insert_cut_to_carry_list<SetLUT>(i2, i1, i2_child[0], i2_child[1], max_i2_1, max_i2_2); 
 /*     
     node<Ntk> slowest_leaf;
     uint32_t time = 0; 
@@ -1744,10 +1762,6 @@ private:
     return false;
   }
 
-  bool is_carry_node_mapped(node<Ntk> n) {
-    return carry_node_mapped[n];
-  }
-
   void find_num_nodes(node<Ntk> n, cut_t const& bestcut, uint32_t* num_nodes,
       uint32_t depth, uint32_t* max_depth, bool printtt) {
 
@@ -1998,10 +2012,8 @@ private:
   std::vector<uint32_t> delays;
   std::vector<uint32_t> paths;
   std::vector<std::vector<uint32_t>> carry_cut_list;
-  std::vector<bool> carry_node_mapped;
   std::vector<node<Ntk>> carry_nodes;
   std::vector<node<Ntk>> carry_driver_nodes;
-  std::vector<std::vector<int>> carry_cut_index_list;
   std::vector<std::vector<node<Ntk>>> carry_paths;
   network_cuts_t cuts;
 
