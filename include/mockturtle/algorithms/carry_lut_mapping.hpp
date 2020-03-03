@@ -146,7 +146,6 @@ public:
     if (ps.carry_mapping)
     {
       carry_chain_mapping();
-      //set_mapping_refs<false>();
     }
 
     while ( iteration < ps.rounds + ps.rounds_ela )
@@ -193,7 +192,7 @@ private:
       // Delete me
       if (1) {
         std::cout << "There were " << carry_paths.size() << " paths placed on carry chain\n"; 
-        num_worst_paths();
+        //num_worst_paths();
       }
   }
 
@@ -751,7 +750,8 @@ private:
       return true;
     } 
 
-    assert(0);
+    //assert(0);
+    std::cout << "might be rejecting legal cut here\n";
     return false;
   }
 
@@ -1778,7 +1778,7 @@ private:
   }
 
   void print_mig_path_and_depth_helper (uint32_t n, uint32_t& path_count) {
-    if (path_count > 4000000) {
+    if (path_count > 1000000) {
       return;
     } else if (ntk.is_pi(n) || ntk.is_constant(n)) {
       path_count++; 
@@ -1786,16 +1786,18 @@ private:
     } else {
       ntk.foreach_fanin( n, [&]( auto const& f ) {
         auto n_child = ntk.get_node(f);
-        if (path_count < 4000000) {
+        if (path_count < 1000000) {
           print_mig_path_and_depth_helper (n_child, path_count);
-        }
+        } else return;
       });
     }
   }
 
   void print_LUT_path_and_depth_helper (uint32_t n, uint32_t& path_count) {
     uint32_t worst_delay = 0;
-    if (ntk.is_pi(n) || ntk.is_constant(n)) {
+    if (path_count > 1000000) {
+      return;
+    } else if (ntk.is_pi(n) || ntk.is_constant(n)) {
       path_count++; 
       return;
     } else {
