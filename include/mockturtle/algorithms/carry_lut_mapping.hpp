@@ -163,7 +163,7 @@ private:
       init_carry_chain_mapping();
 
       // Determine how many rounds of carry chain mapping
-      uint32_t rounds_carry_mapping = 3;
+      uint32_t rounds_carry_mapping = 10;
       //rounds_carry_mapping = num_worst_paths();
       if (rounds_carry_mapping > ps.max_rounds_carry)
         rounds_carry_mapping = ps.max_rounds_carry;
@@ -181,13 +181,12 @@ private:
           break;
 
         // Compute carry LUT mapping 
-        path_for_carry_chain.size();
         compute_carry_mapping<false>(path_for_carry_chain);
         path_for_carry_chain.clear();
       }
 
-      remove_inverter_for_carry_mapping();
-      set_carry_mapping_refs<false>();
+      //remove_inverter_for_carry_mapping();
+      //set_carry_mapping_refs<false>();
 
       // Delete me
       if (1) {
@@ -255,7 +254,6 @@ private:
       for ( auto leaf : carry_cut_list[index] ) {
         if (!is_a_carry_node(leaf)) { 
           if (ps.verbose && ps.verbosity > 2) std::cout << "\t" << leaf << ":" << delays[leaf] << "," << flow_refs[leaf] << "," << ntk.fanout_size(leaf) <<"\n"; 
-          //if (max_delay < delays[leaf] || ntk.fanout_size(leaf) < min_fanout) {
           if (max_delay < delays[leaf] || (max_delay == delays[leaf] && ntk.fanout_size(leaf) < min_fanout)) {
             max_leaf = leaf;
             max_delay = delays[leaf];
@@ -299,7 +297,7 @@ private:
 
       // Node with worst delay
       if (delays[index] == delay && delay != 0 && !ntk.is_pi(node)) {
-        std::cout << "\nFound target index " << index << "(" << delays[index] << ")\n";
+        std::cout << "\nFound target index " << index << "(" << delays[index] << ")";
 
         // Try to place a path starting from this node
         if (find_deepest_LUT(path_for_carry_chain,index)) {
@@ -308,10 +306,10 @@ private:
             path_for_carry_chain.push_back(index);
             carry_nodes[index] += 1;
           }
+          // Only place one path at a time
+          break;
+          
         }
-
-        // Only place one path at a time
-        break;
       }
     }
     carry_paths.push_back(path_for_carry_chain);
@@ -802,8 +800,8 @@ private:
     uint32_t curr_LUT = 0;
     auto const& curr_node = ntk.index_to_node(index);
 
-    // This makes sure that we are dealing with MIG nodes
-    //std::cout << curr_node << "(" << ntk.fanin_size(curr_node) << ")\n";
+    // Why? 
+    std::cout << curr_node << "(" << ntk.fanin_size(curr_node) << ")\n";
     assert (ntk.fanin_size(curr_node) == 3);
 
     for (uint32_t i_fanin = 0; i_fanin < ntk.fanin_size(curr_node); i_fanin++) { 
