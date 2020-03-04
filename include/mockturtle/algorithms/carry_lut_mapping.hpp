@@ -164,7 +164,7 @@ private:
 
       // Determine how many rounds of carry chain mapping
       uint32_t rounds_carry_mapping = 10;
-      //rounds_carry_mapping = num_worst_paths();
+      rounds_carry_mapping = num_worst_paths();
       if (rounds_carry_mapping > ps.max_rounds_carry)
         rounds_carry_mapping = ps.max_rounds_carry;
   
@@ -179,6 +179,8 @@ private:
         std::vector<node<Ntk>> path_for_carry_chain;
         if (!path_selection(path_for_carry_chain))
           break;
+
+        std::cout << "size of path is " << path_for_carry_chain.size() << "\n";
 
         // Compute carry LUT mapping 
         compute_carry_mapping<false>(path_for_carry_chain);
@@ -254,7 +256,7 @@ private:
       for ( auto leaf : carry_cut_list[index] ) {
         if (!is_a_carry_node(leaf)) { 
           if (ps.verbose && ps.verbosity > 2) std::cout << "\t" << leaf << ":" << delays[leaf] << "," << flow_refs[leaf] << "," << ntk.fanout_size(leaf) <<"\n"; 
-          if (max_delay < delays[leaf] || (max_delay == delays[leaf] && ntk.fanout_size(leaf) < min_fanout)) {
+          if (max_delay < delays[leaf] || (max_delay == delays[leaf] && (ntk.fanout_size(leaf) < min_fanout))) {
             max_leaf = leaf;
             max_delay = delays[leaf];
             min_fanout = flows[leaf];
@@ -266,7 +268,7 @@ private:
       for ( auto leaf : cuts.cuts( index )[0] ){
         if (!is_a_carry_node(leaf)) { 
           if (ps.verbose && ps.verbosity > 2) std::cout << "\t" << leaf << ":" << delays[leaf] << "," << flow_refs[leaf] << "," << ntk.fanout_size(leaf) <<"\n"; 
-          if (max_delay < delays[leaf] || (max_delay == delays[leaf] && ntk.fanout_size(leaf) < min_fanout)) {
+          if (max_delay < delays[leaf] || (max_delay == delays[leaf] && (ntk.fanout_size(leaf) < min_fanout))) {
             max_leaf = leaf;
             max_delay = delays[leaf];
             min_fanout = flows[leaf];
@@ -308,15 +310,22 @@ private:
           }
           // Only place one path at a time
           break;
-          
+        } else {
+          path_for_carry_chain.clear();
         }
       }
     }
+    if (path_for_carry_chain.empty()) return false;
+
+    // Keep the path information in carry_paths
     carry_paths.push_back(path_for_carry_chain);
+
+    // Update driver info for figuring out which node drives which carry
+    // in case there are 2 nodes being driving a carry node
     for (uint32_t j = 1; j < path_for_carry_chain.size(); j++) {
       carry_driver_nodes[path_for_carry_chain[j]] = path_for_carry_chain[j-1];
     }
-    if (path_for_carry_chain.empty()) return false;
+
     return true;
   }
 
