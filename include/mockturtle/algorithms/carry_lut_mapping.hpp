@@ -1082,7 +1082,6 @@ private:
     check_5lut_legality(index_child_cuts, unique_cuts, &n_shared, &n_total);
     remove_zero_array(unique_cuts);
 
-
     if (SetLUT) {
       bool child_complement[3] = {0};
       determine_child_complement (child_complement, n, cindex_c, cindex_1, cindex_2);
@@ -1340,14 +1339,7 @@ private:
     for ( auto leaf : cut )
     {
       time = std::max( time, delays[leaf] );
-      // Penalty for choosing a cut that is driven by carry node (incurs additional cost)
-      //if (is_a_carry_node(leaf)) {
-      //  future_time = std::max( future_time, delays[leaf]+LUT_ADDER_DELAY );
-      //  std::cout << "USING THIS\n";
-      //  flow += (flows[leaf]*4);
-      //} else {
-        flow += flows[leaf];
-      //}
+      flow += flows[leaf];
     }
 
     return {flow + cut_area( cut ), time+LUT_DELAY};
