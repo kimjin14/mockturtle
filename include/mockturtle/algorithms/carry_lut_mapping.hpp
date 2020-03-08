@@ -59,7 +59,7 @@ struct carry_lut_mapping_params
   uint32_t verbosity = 6;
 
   /*! \brief Map to carry. */
-  bool carry_mapping{false};
+  bool carry_mapping{true};
 
   /*! \brief Number of rounds for carry chain synthesis. */
   uint32_t max_rounds_carry{1000u};  
@@ -587,62 +587,15 @@ private:
   // Used for the next iteration of carry mapping
   void set_carry_mapping_refs()
   {
-
-    /* compute current delay and update mapping refs */
+    /* compute current delay */
     delay = 0;
     delay_lut = 0;
     ntk.foreach_po( [this]( auto s ) {
       const auto index = ntk.node_to_index( ntk.get_node( s ) );
       delay = std::max( delay, delays[index] );
-      if (is_a_carry_node(ntk.get_node(s))) {
-        map_refs[index] = 0;
-        //delay_lut = std::max( delay_lut, delays[index]);
-      }
-    } );
+    });
 
-    // Nodes driving the carry need to be mapped
-    // Unless they are a carry itself or an input
-    for (auto const& n : top_order) {
-      if (!is_a_carry_node(n)) {
-        delay_lut = std::max( delay_lut, delays[ntk.node_to_index(n)]);
-      } 
-    }
-/*     
-    node<Ntk> slowest_leaf;
-    uint32_t time = 0; 
-    if (ps.verbose && ps.verbosity > 3) std::cout << "Node* " << ntk.node_to_index(index1) << ":";
-      for ( auto leaf : carry_cut_list[index1] ) {
-        if (delays[leaf] > time) {
-          time = delays[leaf];
-          slowest_leaf = leaf;
-        }
-        if (ps.verbose && ps.verbosity > 3)std::cout << leaf << "(" << delays[leaf] << ") ";
-    }
-    std::cout << "\n";
-    if (carry_driver_nodes[index1] == slowest_leaf)
-      time += CARRY_DELAY;
-    else 
-      time += LUT_ADDER_DELAY;
-    delays[index1] = time;
-
-    time = 0;
-    if (ps.verbose && ps.verbosity > 3) std::cout << "Node* " << ntk.node_to_index(index2) << ":";
-      for ( auto leaf : carry_cut_list[index2] ) {
-        if (delays[leaf] > time) {
-          time = delays[leaf];
-          slowest_leaf = leaf;
-        }
-        if (ps.verbose && ps.verbosity > 3)std::cout << leaf << "(" << delays[leaf] << ") ";
-    }
-    std::cout << "\n";
-    if (carry_driver_nodes[index2] == slowest_leaf)
-      time += CARRY_DELAY;
-    else 
-      time += LUT_ADDER_DELAY;
-    delays[index2] = time;
-*/
-
-
+    delay_lut = delay; 
   }
 
   // This function takes in an input array of both LUTs
@@ -1071,7 +1024,13 @@ private:
     cut_t const& cut_1 = cuts.cuts(cindex_1)[i];
     cut_t const& cut_2 = cuts.cuts(cindex_2)[j];
 
-    delays[cindex_1] = cut_delay( cut_1 );
+    // Update delay data
+    uint32_t cut_1_delay = cut_delay( cut_1 ) + LUT_DELAY;
+    uint32_t cut_2_delay = cut_delay( cut_2 ) + LUT_DELAY;
+    uint32_t cut_delay = std::max( cut_1_delay, cut_2_delay);
+    delays[index] = std::max( cut_delay, delays[cindex_c] + CARRY_DELAY );
+
+    std::cout << "Delay of " << cut_1_delay << " vs " << cut_2_delay << " vs " << delays[cindex_c] + CARRY_DELAY << "\n";
 
     // Set LUT function
     // cut_1 and cut_2 with MIG carry node should be
@@ -1099,7 +1058,7 @@ private:
 
   // Find the delay of the specific cut
   // It should look for the slowest (max) of all nodes
-  // Returns the slowest + LUT_DELAY
+  // Returns the slowest + LUT_ADDER_DELAY
   uint32_t cut_delay ( cut_t const& cut ){
     uint32_t time{0u};
 
@@ -1108,7 +1067,7 @@ private:
       time = std::max( time, delays[leaf] );
     }
 
-    return time+LUT_DELAY;
+    return time + LUT_DELAY;
   }
 
   template <uint32_t cost_type> double cost_of_cuts(uint32_t index1, uint32_t index2,
