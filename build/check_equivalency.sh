@@ -1,5 +1,5 @@
 
-FILES=/home/kimjin14/work/mapping/mig_mapping/MIG_experiments/MIG/*
+FILES=/home/kimjin14/work/mapping/mig_mapping/MIG_experiments/MIG/easy/*
 
 for f in $FILES
 do
@@ -11,7 +11,8 @@ do
   echo "Processing $file file..."
 
   # run mapping on benchmark
-  ./run_benchmarks/run_benchmark $f > log/${benchmark_name[1]}.log
+  ./run_benchmarks/run_benchmark $f baseline > log/${benchmark_name[1]}.log
+  ./run_benchmarks/run_benchmark $f >> log/${benchmark_name[1]}.log
   diff blif/${benchmark_name[1]}.blif blif/${benchmark_name[1]}_carry.blif >> log/${benchmark_name[1]}.log
   ../../abc/abc -c "cec blif/${benchmark_name[1]}.blif blif/${benchmark_name[1]}_carry.blif" >> log/${benchmark_name[1]}.log
 
