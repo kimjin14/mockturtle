@@ -184,6 +184,8 @@ private:
 
     if (this->is_carry(n) && (this->get_carry_driver(n) == slowest_node)) {
       return _levels[n] = level + CARRY_DELAY;
+    } else if (this->is_carry(n)) {
+      return _levels[n] = level + LUT_ADDER_DELAY;
     }
     return _levels[n] = level + LUT_DELAY;
   }
@@ -200,30 +202,67 @@ private:
       }
       _depth = std::max( _depth, clevel );
     } );
-    print_critical_path();
+    //print_depth_of_all_nodes();
+    //print_critical_path();
+    
   }
 
-  void print_critical_path_helper (uint32_t index) {
+  void print_critical_path_helper (uint32_t index, uint32_t& lut_count, uint32_t& lut_carry_count, uint32_t& carry_count) {
+    
+    auto n = this->index_to_node(index);
 
-    if (this->is_carry(this->index_to_node(index)) ) 
-      std::cout << " -> " << index << "*(" << _levels[index]/LUT_DELAY << ")\n";
-    else
-      std::cout << " -> " << index << "(" << _levels[index]/LUT_DELAY << ")\n";
+    //if (this->is_carry(n) ) {
+    //  std::cout << " -> " << index << "*(" << _levels[index]/LUT_DELAY << ")\n";
+    //} else {
+    //  std::cout << " -> " << index << "(" << _levels[index]/LUT_DELAY << ")\n";
+    //}
 
-    if (this->is_pi(this->index_to_node(index)) || this->is_constant(this->index_to_node(index)))
+    if (this->is_pi(n) || this->is_constant(n))
       return;
    
     uint32_t worst_delay = 0;
+    auto worst_node = 0;
     uint32_t critical_index = 0;
 
-    this->foreach_fanin( this->index_to_node(index), [&]( auto const& f ) {
+    this->foreach_fanin( n, [&]( auto const& f ) {
         const auto leaf = this->node_to_index (this->get_node(f));
         if (_levels[leaf] > worst_delay) {
           critical_index = leaf;
           worst_delay = _levels[leaf];
+          worst_node = this->get_node(f);
         }
     } );
-    print_critical_path_helper (critical_index);
+
+    if (this->is_carry(n) && (this->get_carry_driver(n) == worst_node)) {
+      std::cout << " -> " << index << "*(" << _levels[index]/LUT_DELAY << ")\n";
+      carry_count++;
+    } else if (this->is_carry(n)) {
+      std::cout << " -> " << index << "*(" << _levels[index]/LUT_DELAY << ")\n";
+      lut_carry_count++;
+    } else {
+      std::cout << " -> " << index << "(" << _levels[index]/LUT_DELAY << ")\n";
+      lut_count++;
+    }
+
+    print_critical_path_helper (critical_index, lut_count, lut_carry_count, carry_count);
+
+  }
+
+  void print_depth_of_all_nodes () {
+
+    this->foreach_node ( [&]( auto n ) {
+      if ( this->is_constant( n ) || this->is_pi( n ))
+        return;
+
+      else if (this->is_carry(n))
+        std::cout << "Node* " << n << ": ";
+      else 
+        std::cout << "Node " << n << ": ";
+      this->foreach_fanin( n, [&]( auto fanin ) {
+          std::cout << fanin << "(" << _levels[fanin] << ") ";
+      } );
+      std::cout << "\n";
+    } );
   }
 
   // Print the critical MIG path
@@ -231,6 +270,10 @@ private:
 
     std::cout << "Critical path:\n";
   
+    uint32_t lut_count = 0;
+    uint32_t carry_count = 0;  
+    uint32_t lut_carry_count = 0;  
+
     uint32_t worst_delay = 0;
     uint32_t critical_index = 0;
     this->foreach_po( [&]( auto s ) {
@@ -240,7 +283,8 @@ private:
         worst_delay = _levels[index];
       }
     });
-    print_critical_path_helper (critical_index);
+    print_critical_path_helper (critical_index, lut_count, lut_carry_count, carry_count);
+    std::cout << "total: " << lut_count << " " << lut_carry_count << " " << carry_count << "\n";
   }
 
   bool _count_complements{false};
