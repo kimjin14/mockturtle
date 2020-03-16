@@ -66,6 +66,9 @@ struct carry_lut_mapping_params
   
   /*! \brief Determines whether to print carry node combined LUT fcn. */
   bool carry_lut_combined{false};  
+
+  /* Selects to use Xilinx architecture instead of Intel. */
+  bool xilinx_arch{true};
 };
 
 /*! \brief Statistics for carry_lut_mapping.
@@ -178,7 +181,10 @@ private:
           break;
 
         // Compute carry LUT mapping 
-        compute_carry_mapping<false>(path_for_carry_chain);
+        if (ps.xilinx_arch)
+          xilinx_compute_carry_mapping<false>(path_for_carry_chain);
+        else
+          compute_carry_mapping<false>(path_for_carry_chain);
         //set_carry_mapping_refs(path_for_carry_chain);
         path_for_carry_chain.clear();
       }
@@ -454,6 +460,103 @@ private:
   ///////////////////////////////////////////////////////////////
   // Map to LUTs before carry nodes 
   ///////////////////////////////////////////////////////////////
+
+  template<bool SetLUT>
+  void xilinx_compute_carry_mapping (std::vector<node<Ntk>> path_for_carry_chain)
+  {
+
+    node<Ntk> n_carryin, n_first, n_second;
+
+    // This function should not be called with an empty carry path
+    assert(!path_for_carry_chain.empty());
+
+    // Map nodes in pairs (i+=2) since each ALM has 2 adders
+    for (uint32_t i = 1; i < path_for_carry_chain.size(); i++) {
+
+      // Assign carryin, 1st/2nd node
+      n_carryin = path_for_carry_chain[i-1];
+      n_first = path_for_carry_chain[i];
+
+      if (ps.verbose && ps.verbosity > 3) {
+        std::cout << "Carry LUT mapping iteration " << i << ": " << n_carryin << " " << n_first << "\n";
+      }
+
+      xilinx_compute_carry_LUT_mapping<SetLUT>(n_first, n_carryin);
+    }
+  }
+
+  // This function takes 2 index with its carry-in index and figures out 
+  // if it cuts can be mapped to LUTs before carry node and the cost
+  template <bool SetLUT>
+  int xilinx_compute_carry_LUT_mapping(uint32_t i, uint32_t ic) {
+
+    double cost = 0;
+    double max_cost = -1;
+    int32_t max_i_1 = -1;
+    int32_t max_i_2 = -1;
+
+    // Get relevant children node for mapping
+    node<Ntk> i_child[2] = {0};
+    get_children_node (i_child, i, ic); 
+
+    uint32_t total_num_cuts = 0;
+    uint32_t total_num_legal_cuts = 0;
+
+    for (uint32_t cut_i_1 = 0; cut_i_1 < cuts.cuts(i_child[0]).size(); cut_i_1++) {
+      for (uint32_t cut_i_2 = 0; cut_i_2 < cuts.cuts(i_child[1]).size(); cut_i_2++) {
+
+        total_num_cuts++;
+
+        // Array holding the nodes to the halfs of ALM as separate 4-LUT
+        // [0][0] and [1][0] contains # of input
+        uint32_t i_child_cuts[2][5] = {0}; 
+
+        uint32_t abce0f0[5] = {0};
+  
+        uint32_t ntotal = 0; 
+        uint32_t nshared = 0; 
+
+        ////////////////////////////////
+        // Checking input requirements
+        //////////////////////////////// 
+        bool check_legality = true;
+        if (insert_cuts_to_array (i_child_cuts, i, ic, cut_i_1, cut_i_2)) {
+          if (!check_5lut_legality (i_child_cuts, abce0f0, &nshared, &ntotal))
+            check_legality = false;
+        } else check_legality = false;
+
+        if (!check_legality) continue;
+
+        total_num_legal_cuts++;
+
+        ////////////////////////////////
+        // Calculating cost of cut 
+        //////////////////////////////// 
+
+        cost = cost_of_5LUT_cuts<4>(i_child[0], i_child[1], cut_i_1, cut_i_2, nshared, ntotal);
+
+        if (cost > max_cost) {
+          max_cost = cost;
+          max_i_1 = cut_i_1;
+          max_i_2 = cut_i_2;
+        }
+        if (ps.verbose && ps.verbosity > 3) {
+          //print_cuts (cut_i1_1, cut_i1_2, cut_i2_1, cut_i2_2, i1_child, i2_child, cost); 
+        }
+      }
+    }
+
+    if (ps.verbose && ps.verbosity > 3) {
+      std::cout << "\tTotal number of cuts are " << total_num_cuts << " and " << total_num_legal_cuts << " were legal\n";
+      std::cout << "\tSelected cut is " << max_i_1 << " " << max_i_2 << "\n";
+      //print_cuts (max_i_1, max_i_2, max_i2_1, max_i2_2, i1_child, i2_child, max_cost); 
+    }
+    assert((max_i_1 >= 0) && (max_i_2 >= 0));
+
+    insert_cut_to_carry_list<SetLUT>(i, ic, i_child[0], i_child[1], max_i_1, max_i_2); 
+
+    return 0;
+  }
 
   template<bool SetLUT>
   void compute_carry_mapping (std::vector<node<Ntk>> path_for_carry_chain)
@@ -1119,6 +1222,40 @@ private:
     return time + LUT_DELAY;
   }
 
+  template <uint32_t cost_type> double cost_of_5LUT_cuts(uint32_t index_1, uint32_t index_2,
+      int32_t i1, uint32_t i2, uint32_t nshared, uint32_t ntotal) {
+
+    double cost = 0;
+      
+    if (cost_type == 0) {
+      cost += cuts.cuts(index_1)[i1].size() + cuts.cuts(index_2)[i2].size();
+
+    } else if (cost_type == 1) { // Best Delay
+  
+      cost += (1.0/(double)cut_delay (cuts.cuts(index_1)[i1]));
+      cost += (1.0/(double)cut_delay (cuts.cuts(index_2)[i2]));
+
+    } else if (cost_type == 2) { // Most Number of Shared Inputs
+  
+      cost += nshared/ntotal;
+    
+    } else if (cost_type == 3) { // Delay with shared input
+
+      cost += (1.0/(double)cut_delay (cuts.cuts(index_1)[i1]));
+      cost += (1.0/(double)cut_delay (cuts.cuts(index_2)[i2]));
+      cost += 0.5*(nshared/ntotal); 
+
+    } else if (cost_type == 4) {
+      cost += (1.0/(double)cut_delay (cuts.cuts(index_1)[i1]));
+      cost += (1.0/(double)cut_delay (cuts.cuts(index_2)[i2]));
+      cost *= (1 + nshared);
+      
+    } else {
+      assert(0);
+    }
+    return cost;
+
+  }
   template <uint32_t cost_type> double cost_of_cuts(uint32_t index1, uint32_t index2,
       uint32_t index1_1, uint32_t index1_2,
       uint32_t index2_1, uint32_t index2_2, uint32_t i1, uint32_t i2, uint32_t j1, uint32_t j2,
