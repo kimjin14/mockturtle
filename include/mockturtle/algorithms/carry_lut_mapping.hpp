@@ -62,7 +62,7 @@ struct carry_lut_mapping_params
   bool carry_mapping{true};
 
   /*! \brief Number of rounds for carry chain synthesis. */
-  uint32_t max_rounds_carry{100u};  
+  uint32_t max_rounds_carry{1};  
   
   /*! \brief Determines whether to print carry node combined LUT fcn. */
   bool carry_lut_combined{false};  
@@ -185,7 +185,6 @@ private:
           xilinx_compute_carry_mapping<false>(path_for_carry_chain);
         else
           compute_carry_mapping<false>(path_for_carry_chain);
-        //set_carry_mapping_refs(path_for_carry_chain);
         path_for_carry_chain.clear();
       }
 
@@ -373,8 +372,11 @@ private:
       remove_inverter();
       cuts = cut_enumeration<Ntk, StoreFunction, CutData>( ntk, ps.cut_enumeration_ps ); 
       for (auto update_carry_path: carry_paths) {
-        if (update_carry_path.empty()) break;
-        compute_carry_mapping<true>(update_carry_path);
+        assert(!update_carry_path.empty());
+        if (ps.xilinx_arch)
+          xilinx_compute_carry_mapping<true>(update_carry_path);
+        else
+          compute_carry_mapping<true>(update_carry_path);
         set_carry_mapping_refs(update_carry_path);
       }
       check_inverter();
