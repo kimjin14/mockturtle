@@ -43,7 +43,8 @@
 #include "../traits.hpp"
 #include "../views/topo_view.hpp"
 
-#define CARRY_MAPPING false 
+#define CARRY_MAPPING true 
+#define XILINX_ARCH false
 
 namespace mockturtle
 {
@@ -136,16 +137,16 @@ void write_blif( Ntk const& ntk, std::ostream& os  )
   std::vector<uint32_t> adder_b;
   std::vector<uint32_t> adder_cin;
 
-  uint32_t separate_chain = 0;
 
-  uint32_t next_node = topo_ntk.size();
   topo_ntk.foreach_node( [&]( auto const& n ) {
 
     if ( topo_ntk.is_constant( n ) || topo_ntk.is_pi( n ) )
       return; /* continue */
 
-    // In case of carry mapped LUT
-    if (CARRY_MAPPING == true && topo_ntk.is_carry(n) ) {
+    // If a carry node is seen, it should be written out differently
+    // We save all the carry node info for printing later so we can keep
+    // LUT names as expected instead of inserting new nodes in between
+    if (CARRY_MAPPING == true && XILINX_ARCH == false && topo_ntk.is_carry(n) ) {
   
       auto const func = topo_ntk.node_function( n );
       auto list_of_cubes = isop(func);     
@@ -154,14 +155,21 @@ void write_blif( Ntk const& ntk, std::ostream& os  )
       uint32_t should_be_constant_0 = 0;
       uint32_t should_be_constant_1 = 0;
 
+      // This checks whether the the current carry node's last child is the last node in the
+      // existing carry chain. If true, insert next, else, create a new chain.
+      // carry_chains[0] = 1 -> 2 -> 3
+      // carry_chains[1] = 30 -> 31 -> 48
+      // checking node 80, last child is 48
+      // insert to carry_chains[1]
+      // carry_chains[1] = 30 -> 31 -> 48 -> 80
       auto const child = topo_ntk.node_to_index(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1) );
       bool inserted = false; 
-        for (auto& carry_chain: carry_chains) {
-          if (!carry_chain.empty() && carry_chain[carry_chain.size()-1] == child) {
-            carry_chain.push_back(n);
-            inserted = true;
-          }
+      for (auto& carry_chain: carry_chains) {
+        if (!carry_chain.empty() && carry_chain[carry_chain.size()-1] == child) {
+          carry_chain.push_back(n);
+          inserted = true;
         }
+      }
       if ( !inserted ) {
           std::vector<uint32_t> new_chain;
           new_chain.push_back(n);
@@ -185,34 +193,81 @@ void write_blif( Ntk const& ntk, std::ostream& os  )
     }
   });
 
-  for (auto carry_chain: carry_chains) {
-    separate_chain = 0;
-    next_node = topo_ntk.size();
-    for (auto n: carry_chain) {
+  // When all nodes are finished being converted to LUTs,
+  // we have a list of carry chains
+  uint32_t clb_input_count = 0;
+  uint32_t current_alm = 0;
+  uint32_t next_node = topo_ntk.size();
 
-      if (separate_chain == 10) {
-        os << fmt::format(".names n{} n{}\n", topo_ntk.node_to_index(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1) ), next_node);
-        os << fmt::format("1 1\n\n", topo_ntk.node_to_index(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1) ), next_node);
-        separate_chain = 0;
+  for (auto carry_chain: carry_chains) {
+    clb_input_count = 0;
+    current_alm = 0;
+    bool first_node = true;
+    for (auto n: carry_chain) {
+ 
+      // Count the number of inputs to the 20 ALMs
+      // Every 20 ALMs (1 CLB), reset input count to 0 
+      // Input count cannot exceed 40
+      //  limited connectivity, using cin as an input as well
+      //  (although it will not use a pin)
+      /*if (current_alm == 20) {
+        current_alm = 0;
+        clb_input_count = 0;
+      } else if (clb_input_count >= 40) {
+        current_alm = 0;
+        clb_input_count = 0;
+        first_node = true;
+        os << "\n";
+      }*/
+      if (current_alm == 10) {
+        assert(clb_input_count < 50 && std::cout << "There are " << clb_input_count << " inputs to CLB.\n");
+
+        current_alm = 0;
+        clb_input_count = 0;
+        first_node = true;
+        os << "\n";
       }
 
-      os << (".subckt adder_lut ");
+      // First node determins whether this is the beginning of the CLB
+      // Carry in cannot be reached from external routing
+      // If it can fit into one of the inputs, we add it but
+      // if it cannot fit (fanout > 5), we create a whole new structure for it
+      if (first_node && (topo_ntk.fanin_size(n) == 6)) {
+        os << (".subckt lut_adder ");
+        os << fmt::format( "in{}=n{} ", 0, topo_ntk.node_to_index(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1)));
+        os << fmt::format( "in{}=unconn in{}=unconn in{}=unconn in{}=unconn ", 1,2,3,4 );
+        os << fmt::format( "cin=unconn cout=c{} sumout=unconn{}\n", next_node, next_node);
+        current_alm++;
+      }
 
+      // Print the 5 inputs to the lut_adder combo
+      // if someone them are not used, connect to "unconn"
       uint32_t input_count = 0;
+
+      os << (".subckt lut_adder ");
       topo_ntk.foreach_fanin( n, [&]( auto const& c ) {
         if (input_count != topo_ntk.fanin_size(n)-1) {
           os << fmt::format( "in{}=n{} ", input_count, topo_ntk.node_to_index( c ) );
           input_count++;
         }
       });
+
+      if (first_node && (topo_ntk.fanin_size(n) != 6)) {
+        os << fmt::format( "in{}=n{} ", input_count, topo_ntk.node_to_index( topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1)) );
+        input_count++;
+      }
+
       for (; input_count < 5; input_count++)
         os << fmt::format( "in{}=unconn ", input_count );
       
-      assert(topo_ntk.fanin_size(n) <= 6); 
-      if (topo_ntk.is_pi(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1))) {
+      if (first_node) { 
+        if (topo_ntk.fanin_size(n) == 6)
+          os << fmt::format("cin=c{} ", next_node++);
+        else
+          os << fmt::format("cin=unconn ");
+        first_node = false;
+      } else if (topo_ntk.is_pi(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1))) {
         os << fmt::format("cin=n{} ", topo_ntk.node_to_index(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1) ) );
-      } else if (separate_chain == 0) { 
-        os << fmt::format("cin=n{} ", next_node++);
       } else {
         os << fmt::format("cin=c{} ", topo_ntk.node_to_index(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1) ) );
       }
@@ -220,11 +275,13 @@ void write_blif( Ntk const& ntk, std::ostream& os  )
       os << fmt::format("cout=c{} ", topo_ntk.node_to_index( n ) );
       os << fmt::format("sumout=n{}\n", topo_ntk.node_to_index( n ) );
 
-      separate_chain++;
+      clb_input_count+=topo_ntk.fanin_size(n);
+      current_alm++;
     }
     os << fmt::format("\n");
   }
   os << fmt::format("\n");
+
 
   if ( topo_ntk.num_pos() > 0u )
   {
@@ -235,7 +292,7 @@ void write_blif( Ntk const& ntk, std::ostream& os  )
   os << ".end\n";
 
   if (CARRY_MAPPING) {
-    os << "\n.model adder_lut\n";
+    os << "\n.model lut_adder\n";
     os << ".inputs in0 in1 in2 in3 in4 cin\n";
     os << ".outputs sumout cout\n";
     os << ".blackbox\n";
