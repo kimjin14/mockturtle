@@ -43,7 +43,7 @@
 #include "../traits.hpp"
 #include "../views/topo_view.hpp"
 
-#define CARRY_MAPPING true 
+#define CARRY_MAPPING false 
 #define XILINX_ARCH true 
 
 namespace mockturtle
@@ -137,6 +137,7 @@ void write_blif( Ntk const& ntk, std::ostream& os  )
   std::vector<uint32_t> adder_b;
   std::vector<uint32_t> adder_cin;
 
+  uint32_t next_node = topo_ntk.size();
 
   topo_ntk.foreach_node( [&]( auto const& n ) {
 
@@ -175,6 +176,103 @@ void write_blif( Ntk const& ntk, std::ostream& os  )
           new_chain.push_back(n);
           carry_chains.push_back(new_chain);
       } 
+    } else if (topo_ntk.is_carry(n)) {
+
+      uint32_t a = next_node++;
+      uint32_t b = next_node++;
+      uint32_t cin = topo_ntk.node_to_index(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1));;
+      uint32_t out = topo_ntk.node_to_index(n);
+
+      os << fmt::format( ".names " );
+      os << fmt::format( "n{} n{} n{} n{}\n", a, b, cin, out );
+      os << fmt::format( "110 1\n");
+      os << fmt::format( "101 1\n");
+      os << fmt::format( "011 1\n");
+      os << fmt::format( "111 1\n\n");
+      
+      auto const func = topo_ntk.node_function( n );
+      auto list_of_cubes = isop(func);
+      uint32_t count = 0;
+      uint32_t should_be_constant_0 = 0;
+      uint32_t should_be_constant_1 = 0;
+      // Separate cubes into upper and lower LUT
+      // Last literal is the carry
+      // Check each cube last bit for - or 0 
+      // UPPER LUT 
+      for ( const auto& cube : list_of_cubes ) {
+        if(!cube.get_mask(topo_ntk.fanin_size(n) - 1)) { 
+          if (cube.num_literals() == 0) should_be_constant_1 ++;
+          should_be_constant_0++;
+        } else if (cube.get_bit(topo_ntk.fanin_size(n) - 1) == 0) { 
+          if (cube.num_literals() == 1) should_be_constant_1 ++;
+          should_be_constant_0++;
+        }
+      }
+
+      os << fmt::format( ".names " );
+      if (should_be_constant_0 > 0 && should_be_constant_1 == 0) {
+        count = 0;
+        topo_ntk.foreach_fanin( n, [&]( auto const& c ) {
+          if (count != topo_ntk.fanin_size(n)-1) // don't include carry-in
+            os << fmt::format( "n{} ", topo_ntk.node_to_index( c ) );
+          count++;
+        });
+        os << fmt::format( " n{}\n", a );
+        for ( const auto& cube : list_of_cubes ) {
+          if (!cube.get_mask(topo_ntk.fanin_size(n) - 1) || cube.get_bit(topo_ntk.fanin_size(n) - 1) == 0) {
+            cube.print( topo_ntk.fanin_size( n )-1, os );
+            os << " 1\n";
+          }
+        }
+      } else {
+        if (should_be_constant_1 != 0) {
+          os << fmt::format( "n1 n{}\n", a );
+          os << "1 1\n";
+        } else {
+          os << fmt::format( "n0 n{}\n", a );
+          os << "1 1\n";
+        }
+      }
+
+      // Separate cubes into upper and lower LUT
+      // Last literal is the carry
+      // Check each cube last bit for - or 1 
+      // LOWER LUT
+      should_be_constant_0 = 0;
+      should_be_constant_1 = 0;
+      for ( const auto& cube : list_of_cubes ) {
+        if(!cube.get_mask(topo_ntk.fanin_size(n) - 1)) {
+          if (cube.num_literals() == 0) should_be_constant_1 ++;
+          should_be_constant_0++;
+        } else if (cube.get_bit(topo_ntk.fanin_size(n) - 1) == 1) {
+          if (cube.num_literals() == 1) should_be_constant_1 ++;
+          should_be_constant_0++;
+        }
+      }
+      os << fmt::format( ".names " );
+      if (should_be_constant_0 > 0 && should_be_constant_1 == 0) {
+        count = 0;
+        topo_ntk.foreach_fanin( n, [&]( auto const& c ) {
+          if (count != topo_ntk.fanin_size(n)-1) // don't include carry-in
+            os << fmt::format( "n{} ", topo_ntk.node_to_index( c ) );
+         count++;
+        });
+        os << fmt::format( " n{}\n", b );
+        for ( const auto& cube : list_of_cubes ) {
+          if (!cube.get_mask(topo_ntk.fanin_size(n) - 1) || cube.get_bit(topo_ntk.fanin_size(n) - 1) == 1) {
+            cube.print( topo_ntk.fanin_size( n )-1, os );
+            os << " 1\n";
+          }
+        }
+      } else {
+        if (should_be_constant_1 != 0) {
+          os << fmt::format( "n1 n{}\n", b );
+          os << "1 1\n";
+        } else {
+          os << fmt::format( "n0 n{}\n", b );
+          os << "1 1\n";
+        }
+      }
     } else {
 
       os << fmt::format( ".names " );
@@ -197,7 +295,6 @@ void write_blif( Ntk const& ntk, std::ostream& os  )
   // we have a list of carry chains
   uint32_t clb_input_count = 0;
   uint32_t current_alm = 0;
-  uint32_t next_node = topo_ntk.size();
 
   for (auto carry_chain: carry_chains) {
     clb_input_count = 0;
