@@ -113,6 +113,7 @@ int main (int argc, char *argv[]){
     mapping_params.baseline = false;
     mapping_params.cost = 4;
     mapping_params.max_rounds_carry = 100;
+
     mapping_view <mig_network, true> carry_mapped_mig { mig };
     carry_lut_mapping <mapping_view<mig_network,true>,true> (carry_mapped_mig, mapping_params);  
     const auto klut_carry_opt = collapse_mapped_network<klut_network>( carry_mapped_mig );
