@@ -5,58 +5,30 @@
 
 #include <dirent.h>
 
-#include <mockturtle/views/mapping_view.hpp>
-#include <mockturtle/views/depth_view.hpp>
-#include <mockturtle/views/carry_depth_view.hpp>
+
 #include <mockturtle/io/verilog_reader.hpp>
 #include <mockturtle/io/write_blif.hpp>
-#include <mockturtle/io/write_verilog.hpp>
-#include <mockturtle/algorithms/lut_mapping.hpp>
 #include <mockturtle/algorithms/carry_lut_mapping.hpp>
-//#include <mockturtle/algorithms/carry_chain_mapping.hpp>
 #include <mockturtle/algorithms/collapse_mapped.hpp>
 #include <mockturtle/networks/mig.hpp>
-#include <mockturtle/networks/xmg.hpp>
+#include <mockturtle/views/depth_view.hpp>
+#include <mockturtle/views/carry_depth_view.hpp>
+#include <mockturtle/views/mapping_view.hpp>
 #include <mockturtle/networks/klut.hpp>
-#include <mockturtle/algorithms/equivalence_checking.hpp>
-#include <mockturtle/algorithms/miter.hpp>
 #include <mockturtle/io/write_dot.hpp>
-
-#include <kitty/kitty.hpp>
-#include <kitty/isop.hpp>
-
-std::string getFileName(const std::string& s) {
-
-  char dirLevel = '/';
-  char period = '.';
-
-  std::string sFile;
-
-  size_t i = s.rfind(dirLevel, s.length());
-  sFile = s.substr(i+1, s.length() - i);
-  i = sFile.rfind(period);
-  sFile = sFile.substr(0,i);
-  i = sFile.rfind(period);
-  sFile = sFile.substr(0,i);
-  i = sFile.rfind(period);
-  if (i != std::string::npos) {
-     sFile = sFile.substr(i+1, s.length() - i);
-  }
-  return(sFile);
-}
 
 using namespace mockturtle;
 
+std::string getFileName(const std::string& s) {
+  std::string s_rtn;
+  s_rtn = s.substr(s.find_last_of('/')+1);
+  s_rtn.erase(0,s_rtn.find('.')+1); 
+  s_rtn.erase(s_rtn.find('.')); 
+  return s_rtn;
+}
+
 int main (int argc, char *argv[]){
-
-  bool runbaseline = false;
-  if (argc > 2 && argv[2] == std::string("baseline")) {
-    std::cout << "Baseline.\n";
-    runbaseline = true;
-  }
-
   mig_network mig;
-  mig_network mig_original;
   lorina::diagnostic_engine diag;
   lorina::return_code result;
   
@@ -67,88 +39,58 @@ int main (int argc, char *argv[]){
   if (result != lorina::return_code::success) {
     std::cout << "Parsing Error.\n"; 
   }
-  result = lorina::read_verilog(argv[1], verilog_reader(mig_original) ,&diag);
-  if (result != lorina::return_code::success) {
-    std::cout << "Parsing Error.\n"; 
-  }
   depth_view depth_mig { mig }; 
-  //xmg_network xmg;
-  //result = lorina::read_verilog(argv[1], verilog_reader(xmg) ,&diag);
-  //if (result != lorina::return_code::success) {
-  //  std::cout << "Parsing Error.\n"; 
-  //}
-  //depth_view depth_xmg { xmg };
 
-  //std::cout << "depth of xmg is " << depth_xmg.depth() << "\n";
-
-  
-  /////////////////////////////
-  // Map MIG to LUT only
-  /////////////////////////////
-  if (runbaseline) {
-    mapping_view <mig_network, true> mapped_mig { mig };
-    lut_mapping <mapping_view<mig_network,true>,true>(mapped_mig); 
-    const auto klut_opt = collapse_mapped_network<klut_network>( mapped_mig );
-    if (klut_opt == std::nullopt) {
-      std::cout << "Does not have mapping\n";
-      return 0;
-    }
-    auto const& klut = *klut_opt;
-    depth_view depth_klut ( klut ); 
-
-    //write_dot(klut, "output_lut.dot");
-    write_blif(klut, "blif/" + getFileName(argv[1]) + ".blif");  
-
-    std::cout << "Results for " << argv[1] << ",";
-    std::cout << mig.num_gates() << "," << depth_mig.depth();
-    std::cout << "," << klut.num_gates() << "," << depth_klut.depth();
-    std::cout << "\n";
-  }
-  ///////////////////////////// 
+  //////////////////////////////////////////////////////
   // Map MIG to LUT and carry
-  /////////////////////////////
-  else {
-    carry_lut_mapping_params mapping_params;
-    mapping_params.xilinx_arch = true;
-    mapping_params.baseline = false;
-    mapping_params.cost = 4;
-    mapping_params.max_rounds_carry = 100;
+  //////////////////////////////////////////////////////
+  // argv[1]        benchmark name
+  // argv[2](true)  do carry mapping?
+  // argv[3](true)  use xilinx arch?
+  // argv[4](300)   number of max carry mapping
+  // argv[5](4)     cost function used 
 
-    mapping_view <mig_network, true> carry_mapped_mig { mig };
-    carry_lut_mapping <mapping_view<mig_network,true>,true> (carry_mapped_mig, mapping_params);  
-    const auto klut_carry_opt = collapse_mapped_network<klut_network>( carry_mapped_mig );
-    if (klut_carry_opt == std::nullopt) {
-      std::cout << "LUT and carry does not have mapping\n";
-      return 0;
-    }
-    auto const& klut_carry = *klut_carry_opt;
+  std::string outputName; 
 
-    carry_depth_view depth_klut_carry { klut_carry }; 
+  carry_lut_mapping_params mapping_params;
 
-    //write_dot(klut_carry, "output_carry_lut.dot");
-    write_blif(klut_carry, "blif/" + getFileName(argv[1]) + "_carry.blif");  
-
-    std::cout << "Results for " << argv[1] << ",";
-    std::cout << mig.num_gates() << "," << depth_mig.depth();
-    std::cout << ",=" << klut_carry.num_gates() << "+" << klut_carry.num_carry() << "/2," << float(depth_klut_carry.depth()/LUT_DELAY);
-    std::cout << "\n";
+  // Set carry LUT mapping parameters
+  if (argc > 2 && argv[2] == std::string("baseline")) {
+    mapping_params.carry_mapping = false;
+    outputName = "blif/" + getFileName(argv[1]) + ".blif";
+  } else {
+    mapping_params.carry_mapping = true;
+    outputName = "blif/" + getFileName(argv[1]) + "_carry.blif";
+    if (argc > 3 && argv[3] == std::string("xilinx"))
+      mapping_params.xilinx_arch = true;
+    else if (argc > 4)
+      mapping_params.max_rounds_carry = std::stoi(argv[4]); 
+    else if (argc > 5)
+      mapping_params.cost = std::stoi(argv[5]);
   }
 
-  /////////////////////////////
-  // Print mapping results.
-  /////////////////////////////
-  //std::cout << "Results for " << argv[1] << ",";
-  //std::cout << mig.num_gates() << "," << depth_mig.depth();
-  //std::cout << "," << klut_carry.num_gates() << "(" << klut_carry.num_carry() << ")," << float(depth_klut_carry.depth()/LUT_DELAY);
-  //std::cout << "\n";
+  mapping_view <mig_network, true> carry_mapped_mig { mig };
+  carry_lut_mapping <mapping_view<mig_network,true>,true> (carry_mapped_mig, mapping_params);  
+  const auto klut_carry_opt = collapse_mapped_network<klut_network>( carry_mapped_mig );
+  if (klut_carry_opt == std::nullopt) {
+    std::cout << "LUT and carry does not have mapping\n";
+    return 0;
+  }
+  auto const& klut_carry = *klut_carry_opt;
+  carry_depth_view depth_klut_carry { klut_carry }; 
+ 
+  std::ofstream blifOut (outputName, std::ofstream::out);;
+  blifOut << "# " << outputName << " baseline=" << !mapping_params.carry_mapping
+          << " xilinx=" << mapping_params.xilinx_arch << " maxCarryRounds="
+          << mapping_params.max_rounds_carry  << " cost=" << mapping_params.cost << "\n\n"; 
+  blifOut.close();
+  
+  write_blif(klut_carry, outputName, true/*carry mapping*/, mapping_params.xilinx_arch );
 
-  /////////////////////////////
-  // Write to Verilog for backup
-  /////////////////////////////
-  //std::ofstream os( ("blif/" + getFileName(argv[1]) + "_carry.v").c_str(), std::ofstream::out );
-  //write_verilog(mig, os);
-  //std::ofstream os1( ("blif/" + getFileName(argv[1]) + ".v").c_str(), std::ofstream::out );
-  //write_verilog(mig_original, os1);
+  std::cout << "Results for " << outputName  << ",";
+  std::cout << mig.num_gates() << "," << depth_mig.depth();
+  std::cout << ",=" << klut_carry.num_gates() << "+" << klut_carry.num_carry() << "/2," << float(depth_klut_carry.depth()/LUT_DELAY);
+  std::cout << "\n";
 
   mig.clear_values();
 

@@ -43,9 +43,6 @@
 #include "../traits.hpp"
 #include "../views/topo_view.hpp"
 
-#define CARRY_MAPPING true 
-#define XILINX_ARCH true 
-
 namespace mockturtle
 {
 
@@ -70,7 +67,7 @@ namespace mockturtle
  * \param os Output stream
  */
 template<class Ntk>
-void write_blif( Ntk const& ntk, std::ostream& os  )
+void write_blif( Ntk const& ntk, std::ostream& os, bool carry_mapping, bool xilinx_arch  )
 {
   static_assert( is_network_type_v<Ntk>, "Ntk is not a network type" );
   static_assert( has_fanin_size_v<Ntk>, "Ntk does not implement the fanin_size method" );
@@ -147,7 +144,7 @@ void write_blif( Ntk const& ntk, std::ostream& os  )
     // If a carry node is seen, it should be written out differently
     // We save all the carry node info for printing later so we can keep
     // LUT names as expected instead of inserting new nodes in between
-    if (CARRY_MAPPING && topo_ntk.is_carry(n) ) {
+    if (carry_mapping && topo_ntk.is_carry(n) ) {
   
       auto const func = topo_ntk.node_function( n );
       auto list_of_cubes = isop(func);     
@@ -225,13 +222,8 @@ void write_blif( Ntk const& ntk, std::ostream& os  )
           }
         }
       } else {
-        if (should_be_constant_1 != 0) {
-          os << fmt::format( "n1 n{}\n", a );
-          os << "1 1\n";
-        } else {
-          os << fmt::format( "n0 n{}\n", a );
-          os << "1 1\n";
-        }
+        if (should_be_constant_1 != 0) os << fmt::format( "n{}\n1\n", a );
+        else os << fmt::format( "n{}\n0\n", a );
       }
 
       // Separate cubes into upper and lower LUT
@@ -265,15 +257,18 @@ void write_blif( Ntk const& ntk, std::ostream& os  )
           }
         }
       } else {
-        if (should_be_constant_1 != 0) {
-          os << fmt::format( "n1 n{}\n", b );
-          os << "1 1\n";
-        } else {
-          os << fmt::format( "n0 n{}\n", b );
-          os << "1 1\n";
-        }
+        if (should_be_constant_1 != 0) os << fmt::format( "n{}\n1\n", b );
+        else os << fmt::format( "n{}\n0\n", b );
       }
     } else {
+
+      auto const func = topo_ntk.node_function( n );
+
+      // In this case, it's actually just a 0      
+      if (isop(func).empty()) {
+        os << fmt::format( ".names n{}\n0\n", topo_ntk.node_to_index(n));
+        return;
+      }
 
       os << fmt::format( ".names " );
       topo_ntk.foreach_fanin( n, [&]( auto const& c ) {
@@ -282,7 +277,6 @@ void write_blif( Ntk const& ntk, std::ostream& os  )
       
       os << fmt::format( " n{}\n", topo_ntk.node_to_index( n ) );
     
-      auto const func = topo_ntk.node_function( n );
       for ( const auto& cube : isop( func ) )
       {
         cube.print( topo_ntk.fanin_size( n ), os );
@@ -302,7 +296,7 @@ void write_blif( Ntk const& ntk, std::ostream& os  )
     bool first_node = true;
     for (auto n: carry_chain) {
     
-      if (XILINX_ARCH) {
+      if (xilinx_arch) {
         uint32_t a = next_node++;
         uint32_t b = next_node++;
         uint32_t cin = topo_ntk.node_to_index(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1));;
@@ -357,13 +351,8 @@ void write_blif( Ntk const& ntk, std::ostream& os  )
             }
           }
         } else {
-          if (should_be_constant_1 != 0) {
-            os << fmt::format( "n1 n{}\n", a );
-            os << "1 1\n";
-          } else {
-            os << fmt::format( "n0 n{}\n", a );
-            os << "1 1\n";
-          }
+          if (should_be_constant_1 != 0) os << fmt::format( "n{}\n1\n", a );
+          else os << fmt::format( "n{}\n0\n", a );
         }
 
         // Separate cubes into upper and lower LUT
@@ -397,13 +386,8 @@ void write_blif( Ntk const& ntk, std::ostream& os  )
             }
           }
         } else {
-          if (should_be_constant_1 != 0) {
-            os << fmt::format( "n1 n{}\n", b );
-            os << "1 1\n";
-          } else {
-            os << fmt::format( "n0 n{}\n", b );
-            os << "1 1\n";
-          }
+          if (should_be_constant_1 != 0) os << fmt::format( "n{}\n1\n", b );
+          else os << fmt::format( "n{}\n0\n", b );
         }
         current_alm++;
       } else {
@@ -495,7 +479,7 @@ void write_blif( Ntk const& ntk, std::ostream& os  )
   }
   os << ".end\n";
 
-  if (CARRY_MAPPING && !XILINX_ARCH) {
+  if (carry_mapping && !xilinx_arch) {
     os << "\n.model lut_adder\n";
     os << ".inputs in0 in1 in2 in3 in4 cin\n";
     os << ".outputs sumout cout\n";
@@ -524,10 +508,10 @@ void write_blif( Ntk const& ntk, std::ostream& os  )
  * \param filename Filename
  */
 template<class Ntk>
-void write_blif( Ntk const& ntk, std::string const& filename )
+void write_blif( Ntk const& ntk, std::string const& filename, bool carry_mapping, bool xilinx_arch )
 {
-  std::ofstream os( filename.c_str(), std::ofstream::out );
-  write_blif( ntk, os );
+  std::ofstream os( filename.c_str(), std::ofstream::out |std::ofstream::app );
+  write_blif( ntk, os, carry_mapping, xilinx_arch );
   os.close();
 }
 

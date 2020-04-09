@@ -55,20 +55,21 @@ struct carry_lut_mapping_params
   /*! \brief Verbosity Level. >3 means print everything*/
   uint32_t verbosity = 6;
 
-  /*! \brief Map to carry. */
-  bool carry_mapping{true};
-
-  /*! \brief Number of rounds for carry chain synthesis. */
-  uint32_t max_rounds_carry{1};  
-  
-  /*! \brief Determines whether to print carry node combined LUT fcn. */
+  /* Determines whether to print carry node combined LUT fcn. SHOULD NOT BE USED ANYMORE! */
   bool carry_lut_combined{false};  
 
-  /* Selects to use Xilinx architecture instead of Intel. */
-  bool xilinx_arch{false};
+  /* Map to carry. */
+  bool carry_mapping{true};
 
-  bool baseline{false};
+  /* Selects to use Xilinx architecture instead of Intel. */
+  bool xilinx_arch{true};
+
+  /* Number of rounds for carry chain synthesis. */
+  uint32_t max_rounds_carry{300};  
+ 
+  /* Cost function to be used. */ 
   int cost{4};
+
 };
 
 /*! \brief Statistics for carry_lut_mapping.
