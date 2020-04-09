@@ -297,6 +297,66 @@ void write_blif( Ntk const& ntk, std::ostream& os, bool carry_mapping, bool xili
     for (auto n: carry_chain) {
     
       if (xilinx_arch) {
+       if (current_alm == 10) {
+          assert(clb_input_count < 50 && std::cout << "There are " << clb_input_count << " inputs to CLB.\n");
+
+          current_alm = 0;
+          clb_input_count = 0;
+          first_node = true;
+          os << "\n";
+        }
+
+        // First node determins whether this is the beginning of the CLB
+        // Carry in cannot be reached from external routing
+        // If it can fit into one of the inputs, we add it but
+        // if it cannot fit (fanout > 5), we create a whole new structure for it
+        if (first_node && (topo_ntk.fanin_size(n) == 6)) {
+          os << (".subckt lut_adder ");
+          os << fmt::format( "in{}=n{} ", 0, topo_ntk.node_to_index(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1)));
+          os << fmt::format( "in{}=unconn in{}=unconn in{}=unconn in{}=unconn ", 1,2,3,4 );
+          os << fmt::format( "cin=unconn cout=c{} sumout=unconn{}\n", next_node, next_node);
+          current_alm++;
+        }
+
+        // Print the 5 inputs to the lut_adder combo
+        // if someone them are not used, connect to "unconn"
+        uint32_t input_count = 0;
+
+        os << (".subckt lut_adder ");
+        topo_ntk.foreach_fanin( n, [&]( auto const& c ) {
+          if (input_count != topo_ntk.fanin_size(n)-1) {
+            os << fmt::format( "in{}=n{} ", input_count, topo_ntk.node_to_index( c ) );
+            input_count++;
+          }
+        });
+
+        if (first_node && (topo_ntk.fanin_size(n) != 6)) {
+          os << fmt::format( "in{}=n{} ", input_count, topo_ntk.node_to_index( topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1)) );
+          input_count++;
+        }
+
+        for (; input_count < 5; input_count++)
+          os << fmt::format( "in{}=unconn ", input_count );
+        
+        if (first_node) { 
+          if (topo_ntk.fanin_size(n) == 6)
+            os << fmt::format("cin=c{} ", next_node++);
+          else
+            os << fmt::format("cin=unconn ");
+          first_node = false;
+        } else if (topo_ntk.is_pi(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1))) {
+          os << fmt::format("cin=n{} ", topo_ntk.node_to_index(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1) ) );
+        } else {
+          os << fmt::format("cin=c{} ", topo_ntk.node_to_index(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1) ) );
+        }
+
+        os << fmt::format("cout=c{} ", topo_ntk.node_to_index( n ) );
+        os << fmt::format("sumout=n{}\n", topo_ntk.node_to_index( n ) );
+
+        clb_input_count+=topo_ntk.fanin_size(n);
+        current_alm++;
+
+/*
         uint32_t a = next_node++;
         uint32_t b = next_node++;
         uint32_t cin = topo_ntk.node_to_index(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1));;
@@ -390,6 +450,7 @@ void write_blif( Ntk const& ntk, std::ostream& os, bool carry_mapping, bool xili
           else os << fmt::format( "n{}\n0\n", b );
         }
         current_alm++;
+*/
       } else {
     
         // Count the number of inputs to the 20 ALMs
@@ -479,7 +540,7 @@ void write_blif( Ntk const& ntk, std::ostream& os, bool carry_mapping, bool xili
   }
   os << ".end\n";
 
-  if (carry_mapping && !xilinx_arch) {
+  if (carry_mapping) {
     os << "\n.model lut_adder\n";
     os << ".inputs in0 in1 in2 in3 in4 cin\n";
     os << ".outputs sumout cout\n";

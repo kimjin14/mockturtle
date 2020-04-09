@@ -87,10 +87,24 @@
        that describe them.
   -->
   <models>
-    <model name="adder">
+    <!--model name="adder">
       <input_ports>
         <port name="a" combinational_sink_ports="sumout cout"/>
         <port name="b" combinational_sink_ports="sumout cout"/>
+        <port name="cin" combinational_sink_ports="sumout cout"/>
+      </input_ports>
+      <output_ports>
+        <port name="cout"/>
+        <port name="sumout"/>
+      </output_ports>
+    </model-->
+    <model name="lut_adder">
+      <input_ports>
+        <port name="in0" combinational_sink_ports="sumout cout"/>
+        <port name="in1" combinational_sink_ports="sumout cout"/>
+        <port name="in2" combinational_sink_ports="sumout cout"/>
+        <port name="in3" combinational_sink_ports="sumout cout"/>
+        <port name="in4" combinational_sink_ports="sumout cout"/>
         <port name="cin" combinational_sink_ports="sumout cout"/>
       </input_ports>
       <output_ports>
@@ -343,14 +357,85 @@
                     <direct name="direct3" input="flut5.out" output="ble5.out"/>                                          
                   </interconnect>
                 </mode>
-                <mode name="arithmetic">
-                  <pb_type name="arithmetic" num_pb="1">
+                <mode name="arithmetic_new">
+                  <pb_type name="arithmetic_new" num_pb="1">
                     <input name="in" num_pins="5"/>
                     <input name="cin" num_pins="1"/>
                     <output name="cout" num_pins="1"/>
                     <output name="sumout" num_pins="1"/>
                     <clock name="clk" num_pins="1"/> 
                     <!-- Special dual-LUT mode that drives adder only -->
+                    <pb_type name="lut_adder" blif_model=".subckt lut_adder" num_pb="1">
+                      <input name="in0" num_pins="1"/>
+                      <input name="in1" num_pins="1"/>
+                      <input name="in2" num_pins="1"/>
+                      <input name="in3" num_pins="1"/>
+                      <input name="in4" num_pins="1"/>
+                      <input name="cin" num_pins="1"/>
+                      <output name="cout" num_pins="1"/>
+                      <output name="sumout" num_pins="1"/>
+                      <delay_constant max="0.01e-9" min="6.9797e-12" in_port="lut_adder.cin" out_port="lut_adder.sumout"/>
+                      <delay_constant max="0.01e-9" min="6.9797e-12" in_port="lut_adder.cin" out_port="lut_adder.cout"/>
+                      <delay_constant max="0.495e-9" min="0.3483e-9" in_port="lut_adder.in0" out_port="lut_adder.sumout"/>
+                      <delay_constant max="0.495e-9" min="0.3483e-9" in_port="lut_adder.in1" out_port="lut_adder.sumout"/>
+                      <delay_constant max="0.495e-9" min="0.3483e-9" in_port="lut_adder.in2" out_port="lut_adder.sumout"/>
+                      <delay_constant max="0.495e-9" min="0.3483e-9" in_port="lut_adder.in3" out_port="lut_adder.sumout"/>
+                      <delay_constant max="0.495e-9" min="0.3483e-9" in_port="lut_adder.in4" out_port="lut_adder.sumout"/>
+                      <delay_constant max="0.495e-9" min="0.3483e-9" in_port="lut_adder.in0" out_port="lut_adder.cout"/>
+                      <delay_constant max="0.495e-9" min="0.3483e-9" in_port="lut_adder.in1" out_port="lut_adder.cout"/>
+                      <delay_constant max="0.495e-9" min="0.3483e-9" in_port="lut_adder.in2" out_port="lut_adder.cout"/>
+                      <delay_constant max="0.495e-9" min="0.3483e-9" in_port="lut_adder.in3" out_port="lut_adder.cout"/>
+                      <delay_constant max="0.495e-9" min="0.3483e-9" in_port="lut_adder.in4" out_port="lut_adder.cout"/>
+                    </pb_type>    
+                    <pb_type name="ff" blif_model=".latch" num_pb="1" class="flipflop">
+                      <input name="D" num_pins="1" port_class="D"/>
+                      <output name="Q" num_pins="1" port_class="Q"/>
+                      <clock name="clk" num_pins="1" port_class="clock"/>
+                      <T_setup value="66e-12" port="ff.D" clock="clk"/>
+                      <T_clock_to_Q max="124e-12" port="ff.Q" clock="clk"/>
+                    </pb_type>
+                    <interconnect>
+                      <direct name="clock" input="arithmetic_new.clk" output="ff.clk"/>
+                      <direct name="lut_input0" input="arithmetic_new.in[0:0]" output="lut_adder.in0"/>
+                      <direct name="lut_input1" input="arithmetic_new.in[1:1]" output="lut_adder.in1"/>
+                      <direct name="lut_input2" input="arithmetic_new.in[2:2]" output="lut_adder.in2"/>
+                      <direct name="lut_input3" input="arithmetic_new.in[3:3]" output="lut_adder.in3"/>
+                      <direct name="lut_input4" input="arithmetic_new.in[4:4]" output="lut_adder.in4"/>
+                      <direct name="add_to_ff" input="lut_adder.sumout" output="ff.D">
+                        <pack_pattern name="chain" in_port="lut_adder.sumout" out_port="ff.D"/>
+                      </direct>
+                      <direct name="carry_in" input="arithmetic_new.cin" output="lut_adder.cin">
+                        <pack_pattern name="chain" in_port="arithmetic_new.cin" out_port="lut_adder.cin"/>
+                      </direct>
+                      <direct name="carry_out" input="lut_adder.cout" output="arithmetic_new.cout">
+                        <pack_pattern name="chain" in_port="lut_adder.cout" out_port="arithmetic_new.cout"/>
+                      </direct>
+                      <mux name="sumout" input="ff.Q lut_adder.sumout" output="arithmetic_new.sumout">
+                        <delay_constant max="25e-12" in_port="lut_adder.sumout" out_port="arithmetic_new.sumout"/>
+                        <delay_constant max="45e-12" in_port="ff.Q" out_port="arithmetic_new.sumout"/>
+                      </mux>
+                    </interconnect>
+                  </pb_type>
+
+                  <interconnect>
+                    <direct name="direct1" input="ble5.in" output="arithmetic_new.in"/>
+                    <direct name="carry_in" input="ble5.cin" output="arithmetic_new.cin">
+                      <pack_pattern name="chain" in_port="ble5.cin" out_port="arithmetic_new.cin"/>
+                    </direct>
+                    <direct name="carry_out" input="arithmetic_new.cout" output="ble5.cout">
+                      <pack_pattern name="chain" in_port="arithmetic_new.cout" out_port="ble5.cout"/>
+                    </direct>
+                    <direct name="direct2" input="ble5.clk" output="arithmetic_new.clk"/>
+                    <direct name="direct3" input="arithmetic_new.sumout" output="ble5.out[0:0]"/> 
+                  </interconnect>
+                </mode>
+                <!--mode name="arithmetic">
+                  <pb_type name="arithmetic" num_pb="1">
+                    <input name="in" num_pins="5"/>
+                    <input name="cin" num_pins="1"/>
+                    <output name="cout" num_pins="1"/>
+                    <output name="sumout" num_pins="1"/>
+                    <clock name="clk" num_pins="1"/> 
                     <pb_type name="lut5" blif_model=".names" num_pb="2" class="lut">
                       <input name="in" num_pins="5" port_class="lut_in"/>
                       <output name="out" num_pins="1" port_class="lut_out"/>
@@ -415,7 +500,7 @@
                     <direct name="direct2" input="ble5.clk" output="arithmetic.clk"/>
                     <direct name="direct3" input="arithmetic.sumout" output="ble5.out[0:0]"/> 
                   </interconnect>
-                </mode>
+                </mode-->
               </pb_type>
               <interconnect>
                 <direct name="direct1" input="lut5inter.in" output="ble5.in"/>
@@ -587,8 +672,8 @@
 
 
         <fc in_type="frac" in_val="0.15" out_type="frac" out_val="0.10">
-            <fc_override port_name="cin" fc_type="frac" fc_val="1"/>
-            <fc_override port_name="cout" fc_type="frac" fc_val="1"/>
+            <fc_override port_name="cin" fc_type="frac" fc_val="0.1"/>
+            <fc_override port_name="cout" fc_type="frac" fc_val="0.1"/>
         </fc>
 
         <pinlocations pattern="spread"/>
@@ -602,6 +687,6 @@
     <LUT_transistor_size LUT_transistor_size="4"/> 
   </power>
   <clocks>
-    <clock buffer_size="auto" C_wire="2.5e-10"/>
+  <clock buffer_size="auto" C_wire="2.5e-10"/>
   </clocks>
 </architecture>
