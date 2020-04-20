@@ -90,8 +90,8 @@ vprOptions = "--timing_report_detail aggregated --route_chan_width"
 blifDir=blifDir+sys.argv[1]+"/"
 
 # Make run directory for VPR
-if not os.path.exists("run"):
-  os.mkdir("run")
+if not os.path.exists(outputDir):
+  os.mkdir(outputDir)
 
 # For each file in the directory, run VPR
 for fileName in os.listdir(blifDir):
@@ -101,34 +101,31 @@ for fileName in os.listdir(blifDir):
   benchmark = str(fileNameList[0])
 
   # Make benchmark directory
-  if not os.path.exists("run/"+benchmark):
-    os.mkdir("run/"+benchmark)
+  if not os.path.exists(outputDir+benchmark):
+    os.mkdir(outputDir+benchmark)
 
   # Copy blif from mockturtle to vpr
-  copyfile(blifDir+fileName, "run/"+benchmark+"/"+fileName);
+  copyfile(blifDir+fileName, outputDir+benchmark+"/"+fileName);
 
   # Run vpr
   value = channelWidthDict[benchmark]
   value = int(value*1.25)
   if value%2 != 0:
     value = value+1
-  os.system(vprDir+"vpr "+xmlFile+" run/"+benchmark+"/"+fileName+" "+vprOptions+" "+str(value)) 
-  #os.system(vprDir+"vpr "+xmlFile+" run/"+benchmark+"/"+fileName) 
+  os.system(vprDir+"vpr "+xmlFile+" "+outputDir+benchmark+"/"+fileName+" "+vprOptions+" "+str(value)) 
 
   print(benchmark)
-  os.rename(runDir+"vpr_stdout.log", runDir+"run/"+benchmark+"/vpr_stdout.log")
+  os.rename(runDir+"vpr_stdout.log", outputDir+benchmark+"/vpr_stdout.log")
   if os.path.exists(runDir+benchmark+".net"):
-    os.rename(runDir+benchmark+".net", runDir+"run/"+benchmark+"/"+benchmark+".net")
+    os.rename(runDir+benchmark+".net", outputDir+benchmark+"/"+benchmark+".net")
   if os.path.exists(runDir+benchmark+".place"):
-    os.rename(runDir+benchmark+".place", runDir+"run/"+benchmark+"/"+benchmark+".place")
+    os.rename(runDir+benchmark+".place", outputDir+benchmark+"/"+benchmark+".place")
   if os.path.exists(runDir+benchmark+".route"):
-    os.rename(runDir+benchmark+".route", runDir+"run/"+benchmark+"/"+benchmark+".route")
+    os.rename(runDir+benchmark+".route", outputDir+benchmark+"/"+benchmark+".route")
   if os.path.exists(runDir+"report_timing.hold.rpt"):
-    os.rename(runDir+"report_timing.hold.rpt", runDir+"run/"+benchmark+"/report_timing.hold.rpt")
+    os.rename(runDir+"report_timing.hold.rpt", outputDir+benchmark+"/report_timing.hold.rpt")
   if os.path.exists(runDir+"report_timing.setup.rpt"):
-    os.rename(runDir+"report_timing.setup.rpt", runDir+"run/"+benchmark+"/report_timing.setup.rpt")
-
-
+    os.rename(runDir+"report_timing.setup.rpt", outputDir+benchmark+"/report_timing.setup.rpt")
 
 #  "aes_core":162,        "aes_core_carry":162,          
 #  "comp":374,            "comp_carry":374,
