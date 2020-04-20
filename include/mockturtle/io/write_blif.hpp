@@ -306,6 +306,9 @@ void write_blif( Ntk const& ntk, std::ostream& os, bool carry_mapping, bool xili
           os << "\n";
         }
 
+        // testing last node inversion
+        
+
         // First node determins whether this is the beginning of the CLB
         // Carry in cannot be reached from external routing
         // If it can fit into one of the inputs, we add it but
@@ -353,7 +356,7 @@ void write_blif( Ntk const& ntk, std::ostream& os, bool carry_mapping, bool xili
         os << fmt::format("cout=c{} ", topo_ntk.node_to_index( n ) );
         os << fmt::format("sumout=n{}\n", topo_ntk.node_to_index( n ) );
 
-        clb_input_count+=topo_ntk.fanin_size(n);
+        clb_input_count+=topo_ntk.fanin_size(n)-1 ; //-1 for the carryin
         current_alm++;
 
 /*
