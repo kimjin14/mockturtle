@@ -168,13 +168,26 @@ private:
 
     uint32_t level{0};
     node slowest_node = n;
+
     this->foreach_fanin( n, [&]( auto const& f ) {
+    
       auto clevel = compute_levels( this->get_node( f ) );
-      
+     
+      // If you want to count inversion as a delay 
       if ( _count_complements && this->is_complemented( f ) )
       {
-        clevel++;
+        clevel+=LUT_DELAY;
       }
+     
+      if (this->is_carry(n) && (this->get_carry_driver(n) == this->get_node(f))) {
+        clevel += CARRY_DELAY;
+      } else if (this->is_carry(n)) {
+        clevel += LUT_DELAY + LUT_DELAY;
+      } else {
+        clevel += LUT_DELAY;
+      }
+
+ 
       if (clevel > level) {
         level = clevel;
         slowest_node = this->get_node(f);
@@ -182,12 +195,13 @@ private:
       level = std::max( level, clevel );
     } );
 
-    if (this->is_carry(n) && (this->get_carry_driver(n) == slowest_node)) {
-      return _levels[n] = level + CARRY_DELAY;
-    } else if (this->is_carry(n)) {
-      return _levels[n] = level + LUT_ADDER_DELAY;
-    }
-    return _levels[n] = level + LUT_DELAY;
+    // Return the correct delay
+    // From your leaves, you have the worst delay node. 
+    // You look at how much delay your node will have from the worst delay node.
+    // If you are a carry and the node came from carry, you would add carry delay
+    // If you are a carry and the node came from a LUT, you would add the large LUT delay
+    // If you are a lut, you would add regular delay 
+    return _levels[n] = level;
   }
 
   void compute_levels()
@@ -202,8 +216,8 @@ private:
       }
       _depth = std::max( _depth, clevel );
     } );
-    //print_depth_of_all_nodes();
-    //print_critical_path();
+    print_depth_of_all_nodes();
+    print_critical_path();
     
   }
 

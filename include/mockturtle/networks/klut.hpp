@@ -197,6 +197,18 @@ public:
     _carry_driver_nodes.push_back(driver_index);
   }
 
+  void create_inverted_output ( uint32_t index ) {
+    _carry_nodes_output_invert.push_back (index);
+  }
+
+  bool is_inverted_output ( node const& n ) const {
+    bool inverted = false;
+    for (auto o: _carry_nodes_output_invert) {
+      if (index_to_node(o) == n) inverted = true;
+    }
+    return n > 1 && inverted;
+  }
+
   bool is_carry ( node const& n ) const {
     bool carry = false;
     for (auto c: _carry_nodes) {
@@ -650,6 +662,7 @@ public:
   std::shared_ptr<klut_storage> _storage;
   std::shared_ptr<network_events<base_type>> _events;
   std::vector<uint64_t> _carry_nodes;
+  std::vector<bool> _carry_nodes_output_invert;
   std::vector<uint64_t> _carry_driver_nodes;
 };
 
