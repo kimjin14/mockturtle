@@ -63,9 +63,9 @@ int main (int argc, char *argv[]){
     outputName = "blif/" + getFileName(argv[1]) + "_carry.blif";
     if (argc > 3 && argv[3] == std::string("xilinx"))
       mapping_params.xilinx_arch = true;
-    else if (argc > 4)
+    if (argc > 4)
       mapping_params.max_rounds_carry = std::stoi(argv[4]); 
-    else if (argc > 5)
+    if (argc > 5)
       mapping_params.cost = std::stoi(argv[5]);
   }
 
