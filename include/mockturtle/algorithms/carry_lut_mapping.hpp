@@ -68,7 +68,7 @@ struct carry_lut_mapping_params
   uint32_t max_rounds_carry{300};  
  
   /* Cost function to be used. */ 
-  int cost{4};
+  int cost{1};
 
 };
 
@@ -302,27 +302,32 @@ private:
   
   bool path_selection (std::vector<node<Ntk>>& path_for_carry_chain) {
 
-    for ( auto it = top_order.rbegin(); it != top_order.rend(); ++it ) {
-      const auto node = *it;
-      const auto index = ntk.node_to_index(node);
+    uint32_t delay_offset = 0;
+    for (uint32_t i = 0; i < 3; i++) {
+      for ( auto it = top_order.rbegin(); it != top_order.rend(); ++it ) {
+        const auto node = *it;
+        const auto index = ntk.node_to_index(node);
 
-      // Node with worst delay
-      if (delays[index] >= delay-LUT_DELAY && delay != 0 && !ntk.is_pi(node)) {
-        std::cout << "Found target index " << index << "(" << delays[index] << ")\n";
+        // Node with worst delay
+        if (delays[index] >= delay-delay_offset&& delay != 0 && !ntk.is_pi(node)) {
+          std::cout << "Found target index " << index << "(" << delays[index] << ")\n";
 
-        // Try to place a path starting from this node
-        if (find_deepest_LUT(path_for_carry_chain,index)) {
-          if (!is_a_carry_node(index)) {
-            //std::cout << "adding " << index << "\n";
-            path_for_carry_chain.push_back(index);
-            //carry_nodes[index] += 1;
+          // Try to place a path starting from this node
+          if (find_deepest_LUT(path_for_carry_chain,index)) {
+            if (!is_a_carry_node(index)) {
+              //std::cout << "adding " << index << "\n";
+              path_for_carry_chain.push_back(index);
+              //carry_nodes[index] += 1;
+            }
+            // Only place one path at a time
+            break;
+          } else {
+            path_for_carry_chain.clear();
           }
-          // Only place one path at a time
-          break;
-        } else {
-          path_for_carry_chain.clear();
         }
       }
+      if (!path_for_carry_chain.empty()) break;
+      delay_offset+=LUT_DELAY;
     }
     if (path_for_carry_chain.empty()) return false;
 
@@ -741,8 +746,14 @@ private:
           if (leaf_delay > updated_delay) updated_delay = leaf_delay;
         }
         delays[index] = updated_delay;
-      } else {
-        delays[index] = cut_flow(cuts.cuts(index).best()).second;
+      } else { 
+        uint32_t new_delay = cut_flow(cuts.cuts(index).best()).second;
+        if (new_delay > delays[index]) std::cout << "LUT delay has changed for node "
+          << index << ": " << delays[index] << " -> " << new_delay << "\n";
+        if (new_delay < delays[index]) std::cout << "LUT delay has changed for node "
+          << index << ": " << delays[index] << " <- " << new_delay << "\n";
+ 
+        delays[index] = new_delay;
       }
     } 
   }
@@ -1228,9 +1239,12 @@ private:
     // NOT using LUT_ADDER_DELAY here (LUT_DELAY + LUT_DELAY)
     uint32_t cut_1_delay = cut_delay( cut_1 ) + LUT_DELAY;
     uint32_t cut_2_delay = cut_delay( cut_2 ) + LUT_DELAY;
+    uint32_t carry_delay = delays[cindex_c] + CARRY_DELAY;
     uint32_t cut_delay = std::max( cut_1_delay, cut_2_delay);
-    delays[index] = std::max( cut_delay, delays[cindex_c] + CARRY_DELAY );
-    std::cout << index << ": " << cut_1 << "(" << cut_1_delay << ")," << cut_2 << "(" << cut_2_delay << ")\n";;
+    delays[index] = std::max( cut_delay, carry_delay );
+    std::cout << index << ": " << cut_1 << "(" << cut_1_delay << "),"
+                               << cut_2 << "(" << cut_2_delay << "),"
+                               << cindex_c << "(" << carry_delay << ")\n";
 
     // Set LUT function
     // cut_1 and cut_2 with MIG carry node should be
@@ -1634,6 +1648,7 @@ private:
       if constexpr ( ELA )
       {
         flow = static_cast<float>( cut_area_estimation( *cut ) );
+        time = cut_flow( *cut ).second;
       }
       else
       {
@@ -1670,6 +1685,7 @@ private:
     if constexpr ( ELA )
     {
       best_time = cut_flow( cuts.cuts( index )[best_cut] ).second;
+      if (best_time > delays[index]) std::cout << "ELA changed " << index << ": from " << delays[index] << "->" << best_time << "\n";
     }
     delays[index] = best_time;
     flows[index] = best_flow / flow_refs[index];
@@ -1972,8 +1988,8 @@ private:
   void print_cut_cost (uint32_t i1, uint32_t i2, uint32_t cut1, uint32_t cut2, double cost) {
     std::cout << "\tCut " << cut1 << " " << cut2 << ": ";
     std::cout << cost << "\n";
-    std::cout << "\t\t" << cuts.cuts(i1)[cut1] << " " << cuts.cuts(i1)[cut1]->data.delay*LUT_DELAY << "\n";
-    std::cout << "\t\t" << cuts.cuts(i2)[cut2] << " " << cuts.cuts(i2)[cut2]->data.delay*LUT_DELAY << "\n";
+    std::cout << "\t\t" << cuts.cuts(i1)[cut1] << " " << cut_delay(cuts.cuts(i1)[cut1])<< "\n";
+    std::cout << "\t\t" << cuts.cuts(i2)[cut2] << " " << cut_delay(cuts.cuts(i2)[cut2])<< "\n";
   }
  
   
