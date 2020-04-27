@@ -54,7 +54,7 @@ def parse_file(file_name):
           flag_cin = 0;
           flag_cout = 0;
         # This indicates LUT + carry - separate to through LUT or cout
-        elif "(adder_lut" in line:
+        elif "(lut_adder" in line:
           flag_carry = 1;
           flag_lut = 0;
           if "cout" in line:
@@ -84,10 +84,10 @@ def parse_file(file_name):
      
   total_delay = lut_value + carry_cin_value + carry_lut_value + routing_value;
   #print file_name,
-  print str(lut_count)+","+str(lut_value)+",",
-  print str(carry_lut_count)+","+str(carry_lut_value)+",",
-  print str(carry_cin_count)+","+str(carry_cin_value)+",",
-  print str(routing_count)+","+str(routing_value)+",",
+  print str(lut_count)+"("+str(lut_value)+")&",
+  print str(routing_count)+"("+str(routing_value)+")&",
+  print str(carry_lut_count)+"("+str(carry_lut_value)+")&",
+  print str(carry_cin_count)+"("+str(carry_cin_value)+")&",
   print str(total_delay)
   
 
@@ -95,13 +95,6 @@ def main():
 
   rundir = sys.argv[1]
   allsubdir = os.listdir(rundir)
-
-  #print "name",
-  #print "lut_count", "lut_value",
-  #print "carry_lut_count", "carry_lut_value",
-  #print "carry_cin_count", "carry_cin_value",
-  #print "routing_count", "routing_value", "total_delay"
-
 
   for subdir in allsubdir:
     vpr_file = rundir + '/' + subdir + '/vpr_stdout.log'
@@ -113,7 +106,7 @@ def main():
           vprpassflag = 0
     if vprpassflag is 1: 
       report = rundir + '/' + subdir + '/report_timing.setup.rpt'
-      print subdir,
+      print subdir + "&",
       parse_file (report);
     else:
       print subdir,
