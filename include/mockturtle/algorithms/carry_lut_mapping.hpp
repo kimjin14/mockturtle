@@ -53,7 +53,7 @@ struct carry_lut_mapping_params
   bool verbose{true};
 
   /*! \brief Verbosity Level. >3 means print everything*/
-  uint32_t verbosity = 2;
+  uint32_t verbosity = 5;
 
   /* Determines whether to print carry node combined LUT fcn. SHOULD NOT BE USED ANYMORE! */
   bool carry_lut_combined{false};  
@@ -120,6 +120,8 @@ public:
         flows( ntk.size() ),
         delays( ntk.size() ),
         carry_cut_list( ntk.size() ),
+        carry_cut_index_list( ntk.size() ),
+        flipped_node_list( ntk.size(), false ),
         carry_nodes( ntk.size(), 0),
         carry_driver_nodes( ntk.size(), 0),
         carry_paths( ),
@@ -382,20 +384,79 @@ private:
   void remove_inverter_for_carry_mapping ( ) {
       // Must update cut truth tables since inverters were moved
       // Remove inverters in its path
-      init_carry_chain_mapping();
+      //init_carry_chain_mapping();
       remove_inverter();
-      cuts = cut_enumeration<Ntk, StoreFunction, CutData>( ntk, ps.cut_enumeration_ps ); 
-      for (auto update_carry_path: carry_paths) {
+
+      for (auto n: top_order) {
+        std::cout << "node " << n << "\n";
+        uint32_t index = ntk.node_to_index(n);
+        if (is_a_carry_node(n)) 
+          carry_truth_table (n, carry_driver_nodes[index]);
+      }
+
+      //cuts = cut_enumeration<Ntk, StoreFunction, CutData>( ntk, ps.cut_enumeration_ps ); 
+
+      /*for (auto update_carry_path: carry_paths) {
         assert(!update_carry_path.empty());
         if (ps.xilinx_arch)
           xilinx_compute_carry_mapping<true>(update_carry_path);
         else
           compute_carry_mapping<true>(update_carry_path);
         set_carry_mapping_refs(update_carry_path);
-      }
-      check_inverter();
+      }*/
+      //check_inverter();
   }
 
+
+  void carry_truth_table (node<Ntk> n, node<Ntk> nc) {
+
+    auto i = ntk.node_to_index(n);
+    auto ic = ntk.node_to_index(nc);
+
+    assert (i != 0);
+
+    // Get relevant children node for mapping
+    node<Ntk> i_child[2] = {0};
+    get_children_node (i_child, i, ic); 
+
+    cut_t const& cut_1 = cuts.cuts(i_child[0])[carry_cut_index_list[i][0]];
+    cut_t const& cut_2 = cuts.cuts(i_child[1])[carry_cut_index_list[i][1]];
+
+    // Set LUT function
+    // cut_1 and cut_2 with MIG carry node should be
+    // turned into truth table 
+    uint32_t index_child_cuts[2][5] = {0}; 
+    uint32_t unique_cuts[5] = {0};
+    uint32_t n_total = 0;   
+    
+    for (auto leaf: cut_1) {
+      unique_cuts[n_total] = leaf;
+      n_total++;
+    }
+    for (auto leaf: cut_2) {
+      bool inserted = false;
+      for (uint32_t j = 0; j < 5; j++) {
+        if (unique_cuts[j] == leaf) inserted = true;
+      }
+      if (!inserted) {
+        unique_cuts[n_total] = leaf;
+        n_total++;
+      }
+    }
+
+    bool child_complement[3] = {0};
+    determine_child_complement (child_complement, n, ic, i_child[0], i_child[1]);
+    kitty::dynamic_truth_table function = compute_carry_function(carry_cut_index_list[i][0], carry_cut_index_list[i][1], i_child[0], i_child[1], child_complement, unique_cuts, n_total, cut_1, cut_2);
+    ntk.set_cell_function(n, function);
+
+    std::cout << "\t\t\t";
+    kitty::print_hex(function);
+    std::cout << "\n";
+  }
+
+  // Remove inverters in the carry path
+  // 32 -> 193 -> !193 -> 249
+  // inputs of 193 will be inverted and 193 won't be anymore
   void remove_inverter() {
     for (auto carry_path: carry_paths) {
       for (uint32_t carry_i = 1; carry_i < carry_path.size(); carry_i++) {
@@ -414,12 +475,15 @@ private:
         // and flip its children that match this node and the node itself
         if (complemented_carry_edge) {
 
+          if (ps.verbose && ps.verbosity > 3) std::cout << "\tFor node " << carry_node << "\n";
+
           // flip children
           for (uint32_t i = 0; i < ntk.fanin_size(carry_node); i++) {
             node<Ntk> child_node = ntk.get_children(carry_node,i);  
             if (ps.verbose && ps.verbosity > 3) std::cout << "\t\tflipping child " << child_node << "\n";
             ntk.flip_children(carry_node, i);
           }
+          flipped_node_list[carry_node] = true;
           
           ntk.foreach_node( [&]( auto n, auto ) {
             for (uint32_t i = 0; i < ntk.fanin_size(n); i++) {
@@ -436,10 +500,12 @@ private:
             if (ntk.get_node(s) == carry_node) {
               if (ps.verbose && ps.verbosity > 3)std::cout << "\t\tflipping output " << ntk.get_node(s) << "\n";
               ntk.flip_complement_output(s);
+              // No need to add truth table here? 
             }
           });
 
         }
+        //carry_truth_table (carry_node, carry_child_node);
       }
     }
   }
@@ -510,6 +576,7 @@ private:
     double max_cost = -1;
     int32_t max_i_1 = -1;
     int32_t max_i_2 = -1;
+    constexpr auto eps{0.00005f};
 
     // Get relevant children node for mapping
     node<Ntk> i_child[2] = {0};
@@ -518,54 +585,59 @@ private:
     uint32_t total_num_cuts = 0;
     uint32_t total_num_legal_cuts = 0;
 
-    for (uint32_t cut_i_1 = 0; cut_i_1 < cuts.cuts(i_child[0]).size(); cut_i_1++) {
-      for (uint32_t cut_i_2 = 0; cut_i_2 < cuts.cuts(i_child[1]).size(); cut_i_2++) {
+    //if (SetLUT) {
+    //  max_i_1 = carry_cut_index_list[i][0];
+    //  max_i_2 = carry_cut_index_list[i][1];
+    //} else {
 
-        total_num_cuts++;
+      for (uint32_t cut_i_1 = 0; cut_i_1 < cuts.cuts(i_child[0]).size(); cut_i_1++) {
+        for (uint32_t cut_i_2 = 0; cut_i_2 < cuts.cuts(i_child[1]).size(); cut_i_2++) {
 
-        // Array holding the nodes to the halfs of ALM as separate 4-LUT
-        // [0][0] and [1][0] contains # of input
-        uint32_t i_child_cuts[2][5] = {0}; 
+          total_num_cuts++;
 
-        uint32_t abce0f0[5] = {0};
+          // Array holding the nodes to the halfs of ALM as separate 4-LUT
+          // [0][0] and [1][0] contains # of input
+          uint32_t i_child_cuts[2][5] = {0}; 
+
+          uint32_t abce0f0[5] = {0};
   
-        uint32_t ntotal = 0; 
-        uint32_t nshared = 0; 
+          uint32_t ntotal = 0; 
+          uint32_t nshared = 0; 
 
-        ////////////////////////////////
-        // Checking input requirements
-        //////////////////////////////// 
-        bool check_legality = true;
-        if (check_xilinx_5lut_legality (i_child[0], i_child[1], cut_i_1, cut_i_2)) {
-        } else check_legality = false;
+          ////////////////////////////////
+          // Checking input requirements
+          //////////////////////////////// 
+          bool check_legality = true;
+          if (check_xilinx_5lut_legality (i_child[0], i_child[1], cut_i_1, cut_i_2)) {
+          } else check_legality = false;
 
-        if (!check_legality) continue;
+          if (!check_legality) continue;
 
-        total_num_legal_cuts++;
+          total_num_legal_cuts++;
 
-        ////////////////////////////////
-        // Calculating cost of cut 
-        //////////////////////////////// 
+          ////////////////////////////////
+          // Calculating cost of cut 
+          //////////////////////////////// 
 
-        cost = cost_of_5LUT_cuts(i_child[0], i_child[1], cut_i_1, cut_i_2, nshared, ntotal);
+          cost = cost_of_5LUT_cuts(i_child[0], i_child[1], cut_i_1, cut_i_2, nshared, ntotal);
 
-        if (cost > max_cost) {
-          max_cost = cost;
-          max_i_1 = cut_i_1;
-          max_i_2 = cut_i_2;
-        }
-        if (ps.verbose && ps.verbosity > 3) {
-          print_cut_cost (i_child[0], i_child[1], cut_i_1, cut_i_2, cost); 
-          //print_cuts (i_child[0], i2_child[1], cut_i2_1, cut_i2_2, cost); 
+          if (cost > max_cost-eps) {
+            max_cost = cost;
+            max_i_1 = cut_i_1;
+            max_i_2 = cut_i_2;
+          }
+          if (ps.verbose && ps.verbosity > 3) {
+            print_cut_cost (i_child[0], i_child[1], cut_i_1, cut_i_2, cost); 
+            //print_cuts (i_child[0], i2_child[1], cut_i2_1, cut_i2_2, cost); 
+          }
         }
       }
-    }
-
-    if (ps.verbose && ps.verbosity > 2) {
-      std::cout << "\tTotal number of cuts are " << total_num_cuts << " and " << total_num_legal_cuts << " were legal\n";
-      std::cout << "\tSelected cut is " << max_i_1 << " " << max_i_2 << "\n";
-      print_cut_cost (i_child[0], i_child[1], max_i_1, max_i_2, max_cost); 
-    }
+    //}
+      if (ps.verbose && ps.verbosity > 2) {
+        std::cout << "\tTotal number of cuts are " << total_num_cuts << " and " << total_num_legal_cuts << " were legal\n";
+        std::cout << "\tSelected cut is " << max_i_1 << " " << max_i_2 << "\n";
+        print_cut_cost (i_child[0], i_child[1], max_i_1, max_i_2, max_cost); 
+      }
     assert((max_i_1 >= 0) && (max_i_2 >= 0));
 
     insert_cut_to_carry_list<SetLUT>(i, ic, i_child[0], i_child[1], max_i_1, max_i_2); 
@@ -1065,7 +1137,7 @@ private:
     }
     return true;
   }
-  uint32_t get_bit (uint32_t val, uint32_t pos) {
+  uint64_t get_bit (uint64_t val, uint64_t pos) {
     return (val >> pos)&0x1;
   }
   uint32_t get_not_bit (uint32_t val, uint32_t pos) {
@@ -1073,7 +1145,7 @@ private:
     return 0x1;
   }
 
-  kitty::dynamic_truth_table compute_carry_function (bool child_complement[3], uint32_t unique_cuts[5], uint32_t n_total, 
+  kitty::dynamic_truth_table compute_carry_function (uint32_t a, uint32_t b, uint32_t cindex_1, uint32_t cindex_2, bool child_complement[3], uint32_t unique_cuts[5], uint32_t n_total, 
       cut_t const& cut1, cut_t const& cut2) {
 
     // There cannot be more than 5 inputs to the 2 4-LUTs with the extra carry chain
@@ -1107,9 +1179,18 @@ private:
     kitty::dynamic_truth_table function (lut_input_size);
     function._bits[0]= 0x0000000000000000;
 
-    auto cut1_function = cuts.truth_table( cut1 ); 
-    auto cut2_function = cuts.truth_table( cut2 ); 
+    auto cut1_function_bu = cuts.truth_table( cut1 ); 
+    auto cut2_function_bu = cuts.truth_table( cut2 ); 
     
+    auto cut1_function =     flip_carry_user_tt (cindex_1, cindex_1, a );
+    auto cut2_function =     flip_carry_user_tt (cindex_2, cindex_2, b );
+    
+    kitty::print_hex(cut1_function_bu); std::cout << "->";
+    kitty::print_hex(cut1_function); std::cout << "\n";
+    kitty::print_hex(cut2_function_bu); std::cout << "->";
+    kitty::print_hex(cut2_function); std::cout << "\n";
+    
+
     // Go through each combination of the input
     // i4 i3 i2 i1 i0
     // 0 0 0 0 0
@@ -1215,6 +1296,7 @@ private:
   //  convention is that carry_cut_list contains 
   //  the inputs to the carry LUT (so push_back)*
   //  *maybe change to keep cut numbers
+  // can't just keep cut numbers since we need to run cut enumeration...
   template<bool SetLUT>
   void insert_cut_to_carry_list(uint32_t index, uint32_t cindex_c,
       uint32_t cindex_1, uint32_t cindex_2, int32_t i, int32_t j) {
@@ -1267,21 +1349,23 @@ private:
         n_total++;
       }
     }
-    //insert_cuts_to_array(index_child_cuts, index, cindex_c, i, j);
-    //check_5lut_legality(index_child_cuts, unique_cuts, &n_shared, &n_total);
-    //remove_zero_array(unique_cuts);
 
-    if (SetLUT) {
+    /*if (SetLUT) {
       bool child_complement[3] = {0};
       determine_child_complement (child_complement, n, cindex_c, cindex_1, cindex_2);
       kitty::dynamic_truth_table function = compute_carry_function(child_complement, unique_cuts, n_total, cut_1, cut_2);
       ntk.set_cell_function(n, function);
-    }
+    } */
+    //else {
+      // carry in node MUST be the last in the list for BLIF generation
+      for (uint32_t i = 0; i < n_total; i++) {
+        carry_cut_list[index].push_back(unique_cuts[i]);
+      }
+      carry_cut_list[index].push_back(cindex_c);
+      carry_cut_index_list[index].push_back(i);
+      carry_cut_index_list[index].push_back(j);
 
-    for (uint32_t i = 0; i < n_total; i++) {
-      carry_cut_list[index].push_back(unique_cuts[i]);
-    }
-    carry_cut_list[index].push_back(cindex_c);
+    //}
   }
 
   // Find the delay of the specific cut
@@ -1761,7 +1845,17 @@ private:
       if constexpr ( StoreFunction )
       {
         if ( !is_a_carry_node(n) ) {
-          ntk.set_cell_function( n, cuts.truth_table( cuts.cuts( index ).best() ) );
+          // NEED TO CHANGE THIS
+          kitty::dynamic_truth_table tt = cuts.truth_table( cuts.cuts( index ).best());
+          auto tt_updated = flip_carry_user_tt ( index, index, 0 );
+
+          kitty::print_hex(tt);
+          std::cout << "->";
+          kitty::print_hex(tt_updated);
+          std::cout << "\n";
+
+          ntk.set_cell_function( n, tt_updated );
+
           if (ps.verbose && ps.verbosity > 3) std::cout << "\t";
           if (ps.verbose && ps.verbosity > 3) kitty::print_hex(ntk.cell_function(n));
           if (ps.verbose && ps.verbosity > 3) std::cout << "\n";
@@ -1769,6 +1863,45 @@ private:
       }
     }
   }
+
+  kitty::dynamic_truth_table flip_carry_user_tt ( uint32_t index, uint32_t curr_index, uint32_t cut_i ) {
+ 
+    kitty::dynamic_truth_table tt_new (cuts.cuts(index)[cut_i].size());;
+
+    if (ntk.is_constant(curr_index)) return tt_new;
+
+    uint32_t place = 0;
+    bool here = false;
+    for (auto leaf: cuts.cuts(index)[cut_i]) {
+      if (leaf == curr_index) {
+        here = true;
+        break;
+      }
+      place++;
+    } 
+ 
+    if (here) {
+      for (uint64_t k = 0; k < pow(2,cuts.cuts(index)[cut_i].size()); k++) {
+        tt_new._bits[0] += uint64_t(get_bit(k, place) << k);
+      }
+      return tt_new;
+    }
+
+    auto n = ntk.index_to_node(curr_index);
+
+    uint32_t j = 0; 
+    std::vector<kitty::dynamic_truth_table> tt_child(3);
+    ntk.foreach_fanin( n, [&]( auto const& f ) {
+      auto n_child = ntk.get_node(f);
+      tt_child[j] = flip_carry_user_tt(index, n_child, cut_i);
+      j++;  
+    });
+    tt_new = ntk.compute(n, tt_child.begin(), tt_child.end());
+
+    return tt_new;
+    
+  }
+
 
   ///////////////////////////////////////////////////////////////
   // Supporting Functions 
@@ -1988,8 +2121,8 @@ private:
   void print_cut_cost (uint32_t i1, uint32_t i2, uint32_t cut1, uint32_t cut2, double cost) {
     std::cout << "\tCut " << cut1 << " " << cut2 << ": ";
     std::cout << cost << "\n";
-    std::cout << "\t\t" << cuts.cuts(i1)[cut1] << " " << cut_delay(cuts.cuts(i1)[cut1])<< "\n";
-    std::cout << "\t\t" << cuts.cuts(i2)[cut2] << " " << cut_delay(cuts.cuts(i2)[cut2])<< "\n";
+    std::cout << "\t\t" << i1 << ":" << cuts.cuts(i1)[cut1] << " " << cut_delay(cuts.cuts(i1)[cut1])<< "\n";
+    std::cout << "\t\t" << i2 << ":" << cuts.cuts(i2)[cut2] << " " << cut_delay(cuts.cuts(i2)[cut2])<< "\n";
   }
  
   
@@ -2044,6 +2177,8 @@ private:
   std::vector<float> flows;
   std::vector<uint32_t> delays;
   std::vector<std::vector<uint32_t>> carry_cut_list;
+  std::vector<std::vector<uint32_t>> carry_cut_index_list;
+  std::vector<bool> flipped_node_list;
   std::vector<node<Ntk>> carry_nodes;
   std::vector<node<Ntk>> carry_driver_nodes;
   std::vector<std::vector<node<Ntk>>> carry_paths;
