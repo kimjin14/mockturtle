@@ -194,8 +194,8 @@ public:
       if (ntk.is_carry(n)) {
         dest.create_carry (node_to_signal[n], node_to_signal[ntk.carry_driver(n)] );
         if (node_driver_type[n] == driver_type::neg) { 
-          //node_to_signal[n] = dest.create_not( node_to_signal[n] );
-          dest.create_inverted_output(node_to_signal[n]);
+          node_to_signal[n] = dest.create_not( node_to_signal[n] );
+          //dest.create_inverted_output(node_to_signal[n]);
         } else if (node_driver_type[n] == driver_type::mixed) {
           std::cout << "Does this happen?\n";
           opposites[n] = dest.create_not( node_to_signal[n] );
