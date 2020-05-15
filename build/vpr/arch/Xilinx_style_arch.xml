@@ -376,16 +376,16 @@
                       <output name="sumout" num_pins="1"/>
                       <delay_constant max="0.01e-9" min="6.9797e-12" in_port="lut_adder.cin" out_port="lut_adder.sumout"/>
                       <delay_constant max="0.01e-9" min="6.9797e-12" in_port="lut_adder.cin" out_port="lut_adder.cout"/>
-                      <delay_constant max="0.495e-9" min="0.3483e-9" in_port="lut_adder.in0" out_port="lut_adder.sumout"/>
-                      <delay_constant max="0.495e-9" min="0.3483e-9" in_port="lut_adder.in1" out_port="lut_adder.sumout"/>
-                      <delay_constant max="0.495e-9" min="0.3483e-9" in_port="lut_adder.in2" out_port="lut_adder.sumout"/>
-                      <delay_constant max="0.495e-9" min="0.3483e-9" in_port="lut_adder.in3" out_port="lut_adder.sumout"/>
-                      <delay_constant max="0.495e-9" min="0.3483e-9" in_port="lut_adder.in4" out_port="lut_adder.sumout"/>
-                      <delay_constant max="0.495e-9" min="0.3483e-9" in_port="lut_adder.in0" out_port="lut_adder.cout"/>
-                      <delay_constant max="0.495e-9" min="0.3483e-9" in_port="lut_adder.in1" out_port="lut_adder.cout"/>
-                      <delay_constant max="0.495e-9" min="0.3483e-9" in_port="lut_adder.in2" out_port="lut_adder.cout"/>
-                      <delay_constant max="0.495e-9" min="0.3483e-9" in_port="lut_adder.in3" out_port="lut_adder.cout"/>
-                      <delay_constant max="0.495e-9" min="0.3483e-9" in_port="lut_adder.in4" out_port="lut_adder.cout"/>
+                      <delay_constant max="0.329e-9" min="0.3483e-9" in_port="lut_adder.in0" out_port="lut_adder.sumout"/>
+                      <delay_constant max="0.329e-9" min="0.3483e-9" in_port="lut_adder.in1" out_port="lut_adder.sumout"/>
+                      <delay_constant max="0.329e-9" min="0.3483e-9" in_port="lut_adder.in2" out_port="lut_adder.sumout"/>
+                      <delay_constant max="0.329e-9" min="0.3483e-9" in_port="lut_adder.in3" out_port="lut_adder.sumout"/>
+                      <delay_constant max="0.329e-9" min="0.3483e-9" in_port="lut_adder.in4" out_port="lut_adder.sumout"/>
+                      <delay_constant max="0.329e-9" min="0.3483e-9" in_port="lut_adder.in0" out_port="lut_adder.cout"/>
+                      <delay_constant max="0.329e-9" min="0.3483e-9" in_port="lut_adder.in1" out_port="lut_adder.cout"/>
+                      <delay_constant max="0.329e-9" min="0.3483e-9" in_port="lut_adder.in2" out_port="lut_adder.cout"/>
+                      <delay_constant max="0.329e-9" min="0.3483e-9" in_port="lut_adder.in3" out_port="lut_adder.cout"/>
+                      <delay_constant max="0.329e-9" min="0.3483e-9" in_port="lut_adder.in4" out_port="lut_adder.cout"/>
                     </pb_type>    
                     <pb_type name="ff" blif_model=".latch" num_pb="1" class="flipflop">
                       <input name="D" num_pins="1" port_class="D"/>
