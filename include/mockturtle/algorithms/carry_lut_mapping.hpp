@@ -53,7 +53,7 @@ struct carry_lut_mapping_params
   bool verbose{true};
 
   /*! \brief Verbosity Level. >3 means print everything*/
-  uint32_t verbosity = 3;
+  uint32_t verbosity = 5;
 
   /* Determines whether to print carry node combined LUT fcn. SHOULD NOT BE USED ANYMORE! */
   bool carry_lut_combined{false};  
@@ -145,26 +145,26 @@ public:
     while ( iteration < ps.rounds )
     {
       compute_mapping<false>(false);
+      print_state();
     }
-    print_critical_path();
-    print_state();
+    // (TODO) current ELA is being run twice.
+    //compute_mapping<true>(false);
 
     /* map to carry chain if true */
-    uint32_t post_carry_delay = delay;
     if (ps.carry_mapping)
     {
       carry_chain_mapping();
-      post_carry_delay = delay;
+      print_state();
     }
     while ( iteration < ps.rounds + ps.rounds_ela)
     {
       compute_mapping<true>(false);
+      print_state();
     }
     update_delay();
     print_critical_path();
     print_state();
 
-    if(delay > post_carry_delay) std::cout << "ELA INCRASED OVERALL DELAY\n";
     derive_mapping();
   }
 
@@ -184,7 +184,7 @@ private:
       // Iteratively map paths to carry chain
       for (uint32_t i = 0; i < rounds_carry_mapping; i++) { 
 
-        uint32_t delay_offset = LUT_DELAY+LUT_DELAY;
+        uint32_t delay_offset = 2 * LUT_DELAY;
         if (ps.verbose) std::cout << "Carry Mapping Iteration " \
           << i << " targetting delay of " << delay << " with offset " << delay_offset << ".\n";
 
@@ -199,13 +199,13 @@ private:
         else
           compute_carry_mapping(path_for_carry_chain);
 
-        set_carry_mapping_refs(path_for_carry_chain);
+        update_delay();   
         path_for_carry_chain.clear();
         print_state();
       }
 
+      set_carry_mapping_refs();
       remove_inverter_for_carry_mapping();
-      print_critical_path();
       print_state();
       std::cout << "There were " << carry_paths.size() << " paths placed on carry chain\n"; 
   }
@@ -249,14 +249,14 @@ private:
   }
 
   // Keep going deeper to its fanin until depth is found
-  bool find_deepest_LUT (std::vector<node<Ntk>>& path_for_carry_chain, uint32_t index) { 
+  bool find_deepest_LUT (std::vector<node<Ntk>>& path_for_carry_chain, uint32_t index, uint32_t length) { 
     
     if (ps.verbose && ps.verbosity > 2) std::cout << "Index " << index << "(" << delays[index] << "):";
     //if (delays[index] == 0 || ntk.is_pi(index)) {
-    if (delays[index] == 0) {
+    if (delays[index] == 0 && length > 8) {
       if (ps.verbose && ps.verbosity > 2) std::cout << "\n";
       return true;
-    } 
+    }
 
     bool deepest = false;
 
@@ -291,7 +291,7 @@ private:
     }
 
     if (max_leaf != index) {
-      deepest = find_deepest_LUT(path_for_carry_chain, max_leaf);
+      deepest = find_deepest_LUT(path_for_carry_chain, max_leaf, length+1);
       if (deepest)  {
         ntk.clear_visited();
         if(add_find_longest_path_in_mapping(path_for_carry_chain, index, index, max_leaf)) {
@@ -307,17 +307,17 @@ private:
   
   bool path_selection (std::vector<node<Ntk>>& path_for_carry_chain, uint32_t delay_offset) {
 
-    for (uint32_t i = 0; i < 3; i++) {
+    for (uint32_t curr_offset = 0; curr_offset <= delay_offset; curr_offset+=LUT_DELAY) {
       for ( auto it = top_order.rbegin(); it != top_order.rend(); ++it ) {
         const auto node = *it;
         const auto index = ntk.node_to_index(node);
 
         // Node with worst delay
-        if (delays[index] >= delay-delay_offset&& delay != 0 && !ntk.is_pi(node)) {
+        if (delays[index] >= delay-curr_offset&& delay != 0 && !ntk.is_pi(node)) {
           std::cout << "Found target index " << index << "(" << delays[index] << ")\n";
 
           // Try to place a path starting from this node
-          if (find_deepest_LUT(path_for_carry_chain,index)) {
+          if (find_deepest_LUT(path_for_carry_chain,index, 0)) {
             if (!is_a_carry_node(index)) {
               //std::cout << "adding " << index << "\n";
               path_for_carry_chain.push_back(index);
@@ -331,7 +331,6 @@ private:
         }
       }
       if (!path_for_carry_chain.empty()) break;
-      delay_offset+=LUT_DELAY;
     }
     if (path_for_carry_chain.empty()) return false;
 
@@ -542,7 +541,6 @@ private:
 
       xilinx_compute_carry_LUT_mapping(n_first, n_carryin);
     }
-    print_all_best_cut();
   }
 
   // This function takes 2 index with its carry-in index and figures out 
@@ -772,6 +770,7 @@ private:
         continue;
       } else if (is_a_carry_node(n)) {
         uint32_t updated_delay = 0;
+        uint32_t updated_delay_index = 0;
         for (auto leaf: carry_cut_list[index]) {
           uint32_t leaf_delay = delays[leaf];
         
@@ -779,10 +778,13 @@ private:
           if (carry_driver_nodes[index] == leaf) leaf_delay += CARRY_DELAY;
           else  leaf_delay += LUT_DELAY + LUT_DELAY; 
 
-          if (leaf_delay > updated_delay) updated_delay = leaf_delay;
+          if (leaf_delay > updated_delay) {
+            updated_delay = leaf_delay;
+            updated_delay_index = leaf;
+          }
         }
         if (updated_delay > delays[index]) std::cout << "Carry delay has changed for node "
-          << index << ": " << delays[index] << " -> " << updated_delay << "\n";
+          << index << " by " << updated_delay_index << ": " << delays[index] << " -> " << updated_delay << "\n";
         if (updated_delay < delays[index]) std::cout << "Carry delay has changed for node "
           << index << ": " << delays[index] << " <- " << updated_delay << "\n";
 
@@ -796,37 +798,30 @@ private:
         delays[index] = new_delay;
       }
     } 
-    ntk.foreach_po( [&]( auto s ) {
+    delay = 0;
+    ntk.foreach_po( [this]( auto s ) {
       const auto index = ntk.node_to_index( ntk.get_node( s ) );
-      if (delays[index] > delay) {
-        delay = delays[index];
-      }
+      delay = std::max( delay, delays[index] );
     });
 
+
+    print_all_best_cut();
   }
 
   // This function updates the depth information after carry mapping
   // Used for the next iteration of carry mapping
-  void set_carry_mapping_refs(std::vector<node<Ntk>> path_for_carry_chain)
+  void set_carry_mapping_refs()
   {
-
-    // This is needed since we don't do a remapping of the LUT
-    // So the LUT delays can be stale
-    update_delay();   
  
     /* compute current delay */
     delay = 0;
-    delay_lut = 0;
     ntk.foreach_po( [this]( auto s ) {
       const auto index = ntk.node_to_index( ntk.get_node( s ) );
       delay = std::max( delay, delays[index] );
-      if ( !is_a_carry_node(index) )
-        map_refs[index]++;
+      map_refs[index]++;
     });
 
-    delay_lut = delay;
-
-    for (auto n: path_for_carry_chain) {
+    /*for (auto n: path_for_carry_chain) {
       map_refs[ntk.node_to_index(n)] = 0; // NOT NECESSARY?
       for (auto const cut_index: carry_cut_list[ntk.node_to_index(n)]) {
         if (!is_a_carry_node(ntk.index_to_node(cut_index)) && \
@@ -834,8 +829,9 @@ private:
           map_refs[cut_index]++;
         }
       }
+    }*/
 
-    }
+    /* compute current area and update mapping refs */
     area = 0;
     for ( auto it = top_order.rbegin(); it != top_order.rend(); ++it )
     {
@@ -846,15 +842,24 @@ private:
       const auto index = ntk.node_to_index( *it );
       if ( map_refs[index] == 0 )
         continue;
-
-      for ( auto leaf : cuts.cuts( index )[0] )
-      {
-        map_refs[leaf]++;
+      
+      if (is_a_carry_node( *it )) {
+        map_refs[index]++;
+        for ( auto leaf : carry_cut_list[index] )
+        {
+          //if (!is_a_carry_node(leaf))
+          map_refs[leaf]++;
+        }
+  
+      } else {
+        for ( auto leaf : cuts.cuts( index )[0] )
+        {
+          map_refs[leaf]++;
+        }
       }
+
       area++;
     }
-
-
   }
 
   // This function takes in an input array of both LUTs
@@ -1291,10 +1296,12 @@ private:
     uint32_t cut_2_delay = cut_delay( cut_2 ) + LUT_DELAY;
     uint32_t carry_delay = delays[cindex_c] + CARRY_DELAY;
     uint32_t cut_delay = std::max( cut_1_delay, cut_2_delay);
-    delays[index] = std::max( cut_delay, carry_delay );
+    uint32_t new_delay = std::max( cut_delay, carry_delay );
     std::cout << index << ": " << cut_1 << "(" << cut_1_delay << "),"
                                << cut_2 << "(" << cut_2_delay << "),"
                                << cindex_c << "(" << carry_delay << ")\n";
+    std::cout << "Delay changed for node " << index << ": " << delays[index] << " -> " << new_delay << "\n";  
+    delays[index] = new_delay;
 
     // Set LUT function
     // cut_1 and cut_2 with MIG carry node should be
@@ -1366,7 +1373,7 @@ private:
 
     } else if (ps.cost == 4) {
 
-
+     
       cost += (double)(cut_delay (cuts.cuts(index_1)[i1]) + cut_delay(cuts.cuts(index_2)[i2])) / delay;
       //cost += (double)((cuts.cuts(index_1)[i1].size() + cuts.cuts(index_2)[i2].size()))/10;
       
@@ -1729,6 +1736,8 @@ private:
       best_time = cut_flow( cuts.cuts( index )[best_cut] ).second;
       if (best_time > delays[index]) std::cout << "ELA changed " << index 
         << ": from " << delays[index] << "->" << best_time << "\n";
+      if (best_time < delays[index]) std::cout << "ELA changed " << index 
+        << ": from " << delays[index] << "<-" << best_time << "\n";
     }
     delays[index] = best_time;
     flows[index] = best_flow / flow_refs[index];
@@ -2112,7 +2121,29 @@ private:
   void print_all_best_cut() {
 
     for ( auto i = 0u; i < ntk.size(); ++i ) {
-      std::cout << "Node " << i << "(" << delays[i] << "): " << cuts.cuts(i).best() << "\n";
+
+      uint32_t max_delay = 0;
+      uint32_t max_index = 0;
+      if (is_a_carry_node(i)) {
+        std::cout << "Node* " << i << "(" << delays[i] << "): { ";
+        for ( auto leaf: carry_cut_list[i] ){
+          std::cout << leaf << " ";
+          if ( delays[leaf] > max_delay ) {
+            max_delay = delays[leaf];
+            max_index = leaf;
+          }
+        }
+        std::cout << "} -> " << max_index <<"\n";
+      } else {
+        std::cout << "Node " << i << "(" << delays[i] << "): " << cuts.cuts(i).best();
+        for ( auto leaf: cuts.cuts(i).best() ){
+          if ( delays[leaf] > max_delay ) {
+            max_delay = delays[leaf];
+            max_index = leaf;
+          }
+        }
+        std::cout << " -> " << max_index <<"\n";
+      }
     }
   }
 
@@ -2137,7 +2168,6 @@ private:
   uint32_t iteration{0}; /* current mapping iteration */
   uint32_t delay{0};     /* current delay of the mapping */
   uint32_t area{0};      /* current area of the mapping */
-  uint32_t delay_lut{0};
   //bool ela{false};       /* compute exact area */
 
   std::vector<node<Ntk>> top_order;

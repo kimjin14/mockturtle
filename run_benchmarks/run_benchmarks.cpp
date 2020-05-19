@@ -57,10 +57,10 @@ int main (int argc, char *argv[]){
   // Set carry LUT mapping parameters
   if (argc > 2 && argv[2] == std::string("baseline")) {
     mapping_params.carry_mapping = false;
-    outputName = "blif/" + getFileName(argv[1]) + ".blif";
+    outputName = getFileName(argv[1]);
   } else {
     mapping_params.carry_mapping = true;
-    outputName = "blif/" + getFileName(argv[1]) + "_carry.blif";
+    outputName = getFileName(argv[1]) + "_carry";
     if (argc > 3 && argv[3] == std::string("xilinx"))
       mapping_params.xilinx_arch = true;
     if (argc > 4)
@@ -79,17 +79,21 @@ int main (int argc, char *argv[]){
   auto const& klut_carry = *klut_carry_opt;
   carry_depth_view depth_klut_carry { klut_carry }; 
  
-  std::ofstream blifOut (outputName, std::ofstream::out);;
+  // Write blif output. Last line will be a comment on what run it was 
+  write_blif(klut_carry, "blif/" + outputName+".blif", true/*carry mapping*/, mapping_params.xilinx_arch );
+  std::ofstream blifOut ("blif/" + outputName+".blif", std::ofstream::out | std::ofstream::app );
   blifOut << "# " << outputName << " baseline=" << !mapping_params.carry_mapping
           << " xilinx=" << mapping_params.xilinx_arch << " maxCarryRounds="
           << mapping_params.max_rounds_carry  << " cost=" << mapping_params.cost << "\n\n"; 
   blifOut.close();
-  
-  write_blif(klut_carry, outputName, true/*carry mapping*/, mapping_params.xilinx_arch );
+
+  // Write blif for CEC. Doesn't have to happen every run.
+  write_blif(klut_carry, outputName+".cec.blif", false/*carry mapping*/, mapping_params.xilinx_arch );
 
   std::cout << "Results for " << outputName  << ",";
   std::cout << mig.num_gates() << "," << depth_mig.depth();
-  std::cout << ",=" << klut_carry.num_gates() << "+" << klut_carry.num_carry() << "/2," << float(depth_klut_carry.depth()/LUT_DELAY);
+  //std::cout << ",=" << klut_carry.num_gates() << "+" << klut_carry.num_carry() << "/2," << float(depth_klut_carry.depth()/LUT_DELAY);
+  std::cout << "," << klut_carry.num_gates() + klut_carry.num_carry() << "," << float(depth_klut_carry.depth()/LUT_DELAY);
   std::cout << "\n";
 
   mig.clear_values();

@@ -297,7 +297,7 @@ void write_blif( Ntk const& ntk, std::ostream& os, bool carry_mapping, bool xili
     for (auto n: carry_chain) {
     
       if (xilinx_arch) {
-       if (current_alm == 10) {
+       if (current_alm == 8) {
           assert(clb_input_count < 50 && std::cout << "There are " << clb_input_count << " inputs to CLB.\n");
 
           current_alm = 0;
@@ -574,7 +574,7 @@ void write_blif( Ntk const& ntk, std::ostream& os, bool carry_mapping, bool xili
 template<class Ntk>
 void write_blif( Ntk const& ntk, std::string const& filename, bool carry_mapping, bool xilinx_arch )
 {
-  std::ofstream os( filename.c_str(), std::ofstream::out |std::ofstream::app );
+  std::ofstream os( filename.c_str(), std::ofstream::out );
   write_blif( ntk, os, carry_mapping, xilinx_arch );
   os.close();
 }
