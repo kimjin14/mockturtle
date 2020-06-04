@@ -88,7 +88,7 @@ int main (int argc, char *argv[]){
   blifOut.close();
 
   // Write blif for CEC. Doesn't have to happen every run.
-  write_blif(klut_carry, outputName+".cec.blif", false/*carry mapping*/, mapping_params.xilinx_arch );
+  write_blif(klut_carry, "blifcec/" + outputName +".cec.blif", false/*carry mapping*/, mapping_params.xilinx_arch );
 
   std::cout << "Results for " << outputName  << ",";
   std::cout << mig.num_gates() << "," << depth_mig.depth();
