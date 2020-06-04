@@ -53,7 +53,7 @@ struct carry_lut_mapping_params
   bool verbose{true};
 
   /*! \brief Verbosity Level. >3 means print everything*/
-  uint32_t verbosity = 5;
+  uint32_t verbosity = 4;
 
   /* Determines whether to print carry node combined LUT fcn. SHOULD NOT BE USED ANYMORE! */
   bool carry_lut_combined{false};  
@@ -121,8 +121,12 @@ public:
         delays( ntk.size() ),
         carry_cut_list( ntk.size() ),
         carry_cut_index_list( ntk.size() ),
-        carry_nodes( ntk.size(), 0),
-        carry_driver_nodes( ntk.size(), 0),
+        carry_nodes( ntk.size(), 0 ),
+        carry_driver_nodes( ntk.size(), 0 ),
+        mapped_to_5LUTa( ntk.size(), 0 ),
+        mapped_to_5LUTb( ntk.size(), 0 ),
+        mapped_to_5LUT( ntk.size(), false),
+        mapped_to_5LUT_complemented( ntk.size(), false ),
         carry_paths( ),
         cuts( cut_enumeration<Ntk, StoreFunction, CutData>( ntk, ps.cut_enumeration_ps ) )
   {
@@ -147,7 +151,6 @@ public:
       compute_mapping<false>(false);
       print_state();
     }
-    compute_mapping<true>(false);
 
     /* map to carry chain if true */
     if (ps.carry_mapping)
@@ -168,6 +171,14 @@ public:
     print_state();
 
     derive_mapping();
+
+    std::cout << "PRINTING INVERTER\n";
+    uint32_t counting = 0;
+    for (auto eachnode: mapped_to_5LUT_complemented) {
+      if (eachnode != 0)
+        std::cout << counting << ": " << eachnode << "\n";
+      counting++;
+    }
   }
 
 private:
@@ -309,14 +320,6 @@ private:
         } 
         carry_cut_list[source_index].push_back(leaf_index);
         std::cout << leaf_index << "\n";
-
-        // Set LUT function
-        //node<Ntk> i_child[2] = {0};
-        //get_children_node (i_child, source_index, leaf_index); 
-
-        //cut_t const& cut_1 = cuts.cuts(i_child[0])[carry_cut_index_list[i][0]];
-        //cut_t const& cut_2 = cuts.cuts(i_child[1])[carry_cut_index_list[i][1]];
-           
 
         // Update delay
         std::cout << "\tUpdate delay for node " << source_index;
@@ -502,7 +505,7 @@ private:
     
     if (ps.verbose && ps.verbosity > 2) std::cout << "Index " << index << "(" << delays[index] << "):";
     //if (delays[index] == 0 || ntk.is_pi(index)) {
-    if (delays[index] == 0 && length > 8) {
+    if (delays[index] == 0 && length > 6) {
       if (ps.verbose && ps.verbosity > 2) std::cout << "\n";
       return true;
     }
@@ -562,7 +565,7 @@ private:
         const auto index = ntk.node_to_index(node);
 
         // Node with worst delay
-        if (delays[index] >= delay-curr_offset&& delay != 0 && !ntk.is_pi(node)) {
+        if (delays[index] >= delay-curr_offset && delay != 0 /*&& map_refs[index] > 0 */ && !ntk.is_pi(node)) {
           std::cout << "Found target index " << index << "(" << delays[index] << ")\n";
 
           // Try to place a path starting from this node
@@ -640,8 +643,10 @@ private:
       // This must be done after all inverters are removed
       for (auto n: top_order) {
         uint32_t index = ntk.node_to_index(n);
-        if (is_a_carry_node(n)) 
+        if (is_a_carry_node(n)) { 
+          std::cout << "CARRY NODE " << n << ":\n";
           carry_truth_table (n, carry_driver_nodes[index]);
+        }
       }
 
       check_inverter();
@@ -692,12 +697,14 @@ private:
 
         auto carry_node = carry_path[carry_i];
         auto carry_child_node = carry_path[carry_i-1];
+        if (carry_child_node == carry_driver_nodes[carry_i]) assert(0);
         
         bool complemented_carry_edge = false;
         for (uint32_t i = 0; i < ntk.fanin_size(carry_node); i++) {
-          node<Ntk> child_node = ntk.get_children(carry_node,i);  
-          if (child_node == carry_child_node && ntk.is_complemented_children(carry_node,i))
+          auto child_node = ntk.get_children(carry_node,i);  
+          if (child_node == carry_child_node && ntk.is_complemented_children(carry_node,i)) {
             complemented_carry_edge = true;
+          }
         }
 
         // If the carry path is complemented, go through all the nodes
@@ -710,12 +717,16 @@ private:
           for (uint32_t i = 0; i < ntk.fanin_size(carry_node); i++) {
             node<Ntk> child_node = ntk.get_children(carry_node,i);  
             if (ps.verbose && ps.verbosity > 3) std::cout << "\t\tflipping child " << child_node << "\n";
+            if (ps.verbose && ps.verbosity > 3) std::cout << "\t\t\tfrom " << ntk.is_complemented_children(carry_node,i); 
+
             ntk.flip_children(carry_node, i);
+
+            if (ps.verbose && ps.verbosity > 3) std::cout << " to " << ntk.is_complemented_children(carry_node,i) << "\n"; 
           }
           
           ntk.foreach_node( [&]( auto n, auto ) {
             for (uint32_t i = 0; i < ntk.fanin_size(n); i++) {
-              if (ntk.get_children(n,i) == carry_node) {
+              if (ntk.get_children(n,i) == carry_node) {\
                 if (ps.verbose && ps.verbosity > 3) std::cout << "\t\tflipping child " << ntk.get_children(n,i) << \
                     " of node " << n << "\n";
                 if (ps.verbose && ps.verbosity > 3) std::cout << "\t\t\tfrom " << ntk.is_complemented_children(n,i); 
@@ -730,7 +741,18 @@ private:
               ntk.flip_complement_output(s);
             }
           });
+        } // completed_carry_edge
 
+        for (uint32_t i = 0; i < ntk.fanin_size(carry_node); i++) {
+          auto child_node = ntk.get_children(carry_node,i);  
+          if (!is_a_carry_node(child_node) && mapped_to_5LUTa[carry_node] != 0 && mapped_to_5LUTa[carry_node] == child_node) {
+            mapped_to_5LUT_complemented[child_node] = ntk.is_complemented_children(carry_node,i);
+            std::cout << "LUT a child " << child_node << "'s complemented is " << ntk.is_complemented_children(carry_node,i) << "\n";
+          }
+          if (!is_a_carry_node(child_node) && mapped_to_5LUTb[carry_node] != 0 && mapped_to_5LUTb[carry_node] == child_node) {
+            mapped_to_5LUT_complemented[child_node] = ntk.is_complemented_children(carry_node,i);
+            std::cout << "LUT b child " << child_node << "'s complemented is " << ntk.is_complemented_children(carry_node,i) << "\n";
+          }
         }
       }
     }
@@ -1369,7 +1391,7 @@ private:
   uint64_t get_bit (uint64_t val, uint64_t pos) {
     return (val >> pos)&0x1;
   }
-  uint32_t get_not_bit (uint32_t val, uint32_t pos) {
+  uint64_t get_not_bit (uint64_t val, uint64_t pos) {
     if (((val >> pos)&0x1) == 1) return 0;
     return 0x1;
   }
@@ -1408,11 +1430,11 @@ private:
     kitty::dynamic_truth_table function (lut_input_size);
     function._bits[0]= 0x0000000000000000;
 
-    //auto cut1_function_bu = cuts.truth_table( cut1 ); 
-    //auto cut2_function_bu = cuts.truth_table( cut2 ); 
+    auto cut1_function_bu = cuts.truth_table( cut1 ); 
+    auto cut2_function_bu = cuts.truth_table( cut2 ); 
     
-    auto cut1_function =     flip_carry_user_tt (cindex_1, cindex_1, a );
-    auto cut2_function =     flip_carry_user_tt (cindex_2, cindex_2, b );
+    auto cut1_function = flip_carry_user_tt (cindex_1, cindex_1, a );
+    auto cut2_function = flip_carry_user_tt (cindex_2, cindex_2, b );
 
     // Go through each combination of the input
     // i4 i3 i2 i1 i0
@@ -1473,6 +1495,17 @@ private:
         function._bits[0] += uint64_t( lut_val << i);
       }
     }
+    std::cout << "\tcut1old: ";
+    kitty::print_hex(cut1_function_bu);
+    std::cout << "\n\tcut2old: ";
+    kitty::print_hex(cut2_function_bu);
+    std::cout << "\n\tcut1: ";
+    kitty::print_hex(cut1_function);
+    std::cout << "\n\tcut2: ";
+    kitty::print_hex(cut2_function);
+    std::cout << "\n\tcombined: ";
+    kitty::print_hex(function);
+    std::cout << "\n";
     return function;
   }
   std::array<signal<Ntk>, 3> ordered_children( node<Ntk> const& n ) const
@@ -1551,6 +1584,17 @@ private:
                                << cindex_c << "(" << carry_delay << ")\n";
     std::cout << "Delay changed for node " << index << ": " << delays[index] << " -> " << new_delay << "\n";  
     delays[index] = new_delay;
+
+    // Add ONE of the LUTs to exit from ALM directly
+    if (cut_1.size() > 1 && mapped_to_5LUT[cindex_1] == false && (cut_2.size() <= 1 || ntk.fanout_size(cindex_1) > ntk.fanout_size(cindex_2)) ){
+      mapped_to_5LUTa[index] = cindex_1;
+      mapped_to_5LUT [ cindex_1 ] = true;
+      std::cout << "Adding 1 " << cindex_1 << " as the LUT to exit\n";
+    } else if (cut_2.size() > 1 && mapped_to_5LUT[cindex_2] == false  && (cut_1.size() <= 1 || ntk.fanout_size(cindex_2) > ntk.fanout_size(cindex_1)) ){
+      mapped_to_5LUTb[index] = cindex_2;
+      mapped_to_5LUT [ cindex_2 ] = true;
+      std::cout << "Adding 2 " << cindex_2 << " as the LUT to exit\n";
+    }
 
     // Set LUT function
     // cut_1 and cut_2 with MIG carry node should be
@@ -2010,17 +2054,31 @@ private:
       for (uint32_t i = 1; i < path.size(); i++) {
 
         auto const n = path[i];
-        auto const ncarry = path[i-1];
+        auto const n_carry = path[i-1];
 
         if ( ntk.is_constant( n ) || ntk.is_pi( n ) || ntk.is_cell_root( n ) )  
           continue;
 
         const auto index = ntk.node_to_index( n );
 
-        if (ps.verbose && ps.verbosity > 3) std::cout << "Node* " << n << ": ";
+        if (ps.verbose && ps.verbosity > 3) std::cout << "Node* " << n;
 
+        // Add node as carry
         std::vector<node<Ntk>> nodes;
-        ntk.add_to_carry_mapping (n, ntk.node_to_index(ncarry)); 
+        ntk.add_to_carry_mapping ( n, ntk.node_to_index(n_carry) ); 
+        
+        // Add LUT mapped before carry  
+        uint32_t index_c1 = 0;
+        uint32_t index_c2 = 0;
+        if (!is_a_carry_node(mapped_to_5LUTa[index]) && mapped_to_5LUTa[index] > 0) 
+          index_c1 = mapped_to_5LUTa[index];
+        if (!is_a_carry_node(mapped_to_5LUTb[index]) && mapped_to_5LUTb[index] > 0)
+          index_c2 = mapped_to_5LUTb[index];
+
+        ntk.add_to_carry_LUT_mapping( n, index_c1, index_c2, \
+            mapped_to_5LUT_complemented[index_c1], mapped_to_5LUT_complemented[index_c2] );
+        if (ps.verbose && ps.verbosity > 3) std::cout << "(" << index_c1 << "/" << index_c2 << ")" << ":";
+
         for ( auto c: carry_cut_list[ntk.node_to_index(n)]) {
           nodes.push_back(c);
           if (ps.verbose && ps.verbosity > 3) std::cout << c << " ";
@@ -2065,12 +2123,6 @@ private:
           // NEED TO CHANGE THIS
           auto tt_updated = flip_carry_user_tt ( index, index, 0 );
 
-          //kitty::dynamic_truth_table tt = cuts.truth_table( cuts.cuts( index ).best());
-          //kitty::print_hex(tt);
-          //std::cout << "->";
-          //kitty::print_hex(tt_updated);
-          //std::cout << "\n";
-
           ntk.set_cell_function( n, tt_updated );
 
           if (ps.verbose && ps.verbosity > 3) std::cout << "\t";
@@ -2089,8 +2141,13 @@ private:
 
     uint32_t place = 0;
     bool here = false;
+    bool flip = false;
     for (auto leaf: cuts.cuts(index)[cut_i]) {
-      if (leaf == curr_index) {
+      if (leaf == curr_index ) {
+        if (mapped_to_5LUT_complemented[leaf] == true) {
+          std::cout << "\tflip " << leaf << "\n";
+          flip = true;
+        }
         here = true;
         break;
       }
@@ -2099,7 +2156,10 @@ private:
  
     if (here) {
       for (uint64_t k = 0; k < pow(2,cuts.cuts(index)[cut_i].size()); k++) {
-        tt_new._bits[0] += uint64_t(get_bit(k, place) << k);
+        if (flip == true)
+          tt_new._bits[0] += uint64_t(get_not_bit(k, place) << k);
+        else 
+          tt_new._bits[0] += uint64_t(get_bit(k, place) << k);
       }
       return tt_new;
     }
@@ -2113,8 +2173,8 @@ private:
       tt_child[j] = flip_carry_user_tt(index, n_child, cut_i);
       j++;  
     });
+  
     tt_new = ntk.compute(n, tt_child.begin(), tt_child.end());
-
     return tt_new;
     
   }
@@ -2177,7 +2237,7 @@ private:
     });
   }
 
-  void print_inverter_from_path (void) {
+  void print_inverter (void) {
     ntk.foreach_node( [this]( auto n, auto ) {
       std::cout << n << ":"; 
       for (uint32_t i = 0; i < ntk.fanin_size(n); i++) {
@@ -2187,6 +2247,7 @@ private:
       std::cout << "\n";
     });
   }
+
 
   void print_carry_nodes() {
     std::cout << "Carry Nodes: ";
@@ -2399,6 +2460,14 @@ private:
 
   void print_state()
   {
+
+    ntk.foreach_node( [&]( auto n, auto ) {
+      if ( ntk.fanout_size(n) == 0 ) 
+        std::cout << "Node " << n << " has 0 output\n";
+    });
+    ntk.foreach_po( [&]( auto const& s ) {
+      std::cout << "PO " << ntk.get_node(s) << ":" << delays[ntk.get_node(s)]<<"\n";
+    });
     if (ps.verbosity > 4 ) {
       for ( auto i = 0u; i < ntk.size(); ++i )
       {
@@ -2429,6 +2498,11 @@ private:
   std::vector<node<Ntk>> carry_nodes;
   std::vector<node<Ntk>> carry_driver_nodes;
   std::vector<std::vector<node<Ntk>>> carry_paths;
+  std::vector<node<Ntk>> mapped_to_5LUTa;
+  std::vector<node<Ntk>> mapped_to_5LUTb;
+  std::vector<bool> mapped_to_5LUT;
+  std::vector<bool> mapped_to_5LUT_complemented;
+
   network_cuts_t cuts;
 
   std::vector<uint32_t> tmp_area; /* temporary vector to compute exact area */

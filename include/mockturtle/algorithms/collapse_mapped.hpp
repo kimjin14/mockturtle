@@ -167,8 +167,28 @@ public:
         children.push_back( node_to_signal[fanin] );
       } );
 
+      // If the node is carry, create a node without hashing (guarantees a create)
+      // Then mark it carry with its LUT input nodes
+      // If the carry node has type neg or mixed, you need to create a not version
+      // Shouldn't create mixed though?
       if (ntk.is_carry(n)) {
+
+        // Create node without hashing
         node_to_signal[n] = dest.create_node_nohash( children, ntk.cell_function( n ) );
+        
+        // Set carry info on the LUT
+        dest.create_carry (node_to_signal[n], node_to_signal[ntk.carry_driver(n)], 
+            node_to_signal[ntk.carry_luta(n)], node_to_signal[ntk.carry_lutb(n)] );
+  
+        // Instead of flipping function in case of inverted output (only when necessary)
+        // create a not since MIG node cannot invert truth table
+        if (node_driver_type[n] == driver_type::neg) { 
+          std::cout << n << " is neg - creates a not\n";
+          node_to_signal[n] = dest.create_not( node_to_signal[n] );
+        } else if (node_driver_type[n] == driver_type::mixed) {
+          std::cout << n << " is mixed - creates a not\n";
+          opposites[n] = dest.create_not( node_to_signal[n] );
+        }
       } else {
         switch ( node_driver_type[n] )
         {
@@ -188,27 +208,26 @@ public:
           break;
         }
       }
-
-      // Take the created node and create a carry signal with it
-      // Has to be completed after create_node
-      if (ntk.is_carry(n)) {
-        dest.create_carry (node_to_signal[n], node_to_signal[ntk.carry_driver(n)] );
-        if (node_driver_type[n] == driver_type::neg) { 
-          node_to_signal[n] = dest.create_not( node_to_signal[n] );
-          //dest.create_inverted_output(node_to_signal[n]);
-        } else if (node_driver_type[n] == driver_type::mixed) {
-          std::cout << "Does this happen?\n";
-          opposites[n] = dest.create_not( node_to_signal[n] );
-        }
-      }
-      std::cout << n << " -> " << node_to_signal[n] << "\n";
+      std::cout << n << " -> " << node_to_signal[n] << "(" << opposites[n] << ")\n";
 
     } );
 
     /* outputs */
     ntk.foreach_po( [&]( auto const& f ) {
-      if ( ntk.is_complemented( f ) && node_driver_type[f] == driver_type::mixed )
-      {
+
+      // Need to create an inverted version if driving output
+      // But if it is already inverted and driving regular output,
+      // need to create a not
+      if ( ntk.is_carry_lut(ntk.get_node(f)) && ntk.is_carry_lut_complemented( ntk.get_node(f) )) {
+        if ( ntk.is_complemented( f ) ) {
+          dest.create_po( node_to_signal[f] );
+        } else {
+          dest.create_po( dest.create_not( node_to_signal[f] ));
+          std::cout << ntk.get_node(f) << " is carry LUT and inverted and output - creates a not\n";
+        }
+      }   
+      else if ( ntk.is_complemented( f ) && node_driver_type[f] == driver_type::mixed ) {
+        std::cout << "THIS OUTPUT " << ntk.get_node(f) << "SHOUDL BE HANDELDC\n";
         dest.create_po( opposites[ntk.get_node( f )] );
       }
       else

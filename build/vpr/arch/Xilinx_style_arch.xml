@@ -100,14 +100,15 @@
     </model-->
     <model name="lut_adder">
       <input_ports>
-        <port name="in0" combinational_sink_ports="sumout cout"/>
-        <port name="in1" combinational_sink_ports="sumout cout"/>
-        <port name="in2" combinational_sink_ports="sumout cout"/>
-        <port name="in3" combinational_sink_ports="sumout cout"/>
-        <port name="in4" combinational_sink_ports="sumout cout"/>
+        <port name="in0" combinational_sink_ports="sumout cout out"/>
+        <port name="in1" combinational_sink_ports="sumout cout out"/>
+        <port name="in2" combinational_sink_ports="sumout cout out"/>
+        <port name="in3" combinational_sink_ports="sumout cout out"/>
+        <port name="in4" combinational_sink_ports="sumout cout out"/>
         <port name="cin" combinational_sink_ports="sumout cout"/>
       </input_ports>
       <output_ports>
+        <port name="out"/>
         <port name="cout"/>
         <port name="sumout"/>
       </output_ports>
@@ -362,6 +363,7 @@
                     <input name="in" num_pins="5"/>
                     <input name="cin" num_pins="1"/>
                     <output name="cout" num_pins="1"/>
+                    <output name="out" num_pins="1"/>
                     <output name="sumout" num_pins="1"/>
                     <clock name="clk" num_pins="1"/> 
                     <!-- Special dual-LUT mode that drives adder only -->
@@ -373,21 +375,27 @@
                       <input name="in4" num_pins="1"/>
                       <input name="cin" num_pins="1"/>
                       <output name="cout" num_pins="1"/>
+                      <output name="out" num_pins="1"/>
                       <output name="sumout" num_pins="1"/>
                       <delay_constant max="0.01e-9" min="6.9797e-12" in_port="lut_adder.cin" out_port="lut_adder.sumout"/>
                       <delay_constant max="0.01e-9" min="6.9797e-12" in_port="lut_adder.cin" out_port="lut_adder.cout"/>
-                      <delay_constant max="0.329e-9" min="0.3483e-9" in_port="lut_adder.in0" out_port="lut_adder.sumout"/>
-                      <delay_constant max="0.329e-9" min="0.3483e-9" in_port="lut_adder.in1" out_port="lut_adder.sumout"/>
-                      <delay_constant max="0.329e-9" min="0.3483e-9" in_port="lut_adder.in2" out_port="lut_adder.sumout"/>
-                      <delay_constant max="0.329e-9" min="0.3483e-9" in_port="lut_adder.in3" out_port="lut_adder.sumout"/>
-                      <delay_constant max="0.329e-9" min="0.3483e-9" in_port="lut_adder.in4" out_port="lut_adder.sumout"/>
-                      <delay_constant max="0.329e-9" min="0.3483e-9" in_port="lut_adder.in0" out_port="lut_adder.cout"/>
-                      <delay_constant max="0.329e-9" min="0.3483e-9" in_port="lut_adder.in1" out_port="lut_adder.cout"/>
-                      <delay_constant max="0.329e-9" min="0.3483e-9" in_port="lut_adder.in2" out_port="lut_adder.cout"/>
-                      <delay_constant max="0.329e-9" min="0.3483e-9" in_port="lut_adder.in3" out_port="lut_adder.cout"/>
-                      <delay_constant max="0.329e-9" min="0.3483e-9" in_port="lut_adder.in4" out_port="lut_adder.cout"/>
+                      <delay_constant max="0.329e-9" min="0.268e-9" in_port="lut_adder.in0" out_port="lut_adder.sumout"/>
+                      <delay_constant max="0.329e-9" min="0.268e-9" in_port="lut_adder.in1" out_port="lut_adder.sumout"/>
+                      <delay_constant max="0.329e-9" min="0.268e-9" in_port="lut_adder.in2" out_port="lut_adder.sumout"/>
+                      <delay_constant max="0.329e-9" min="0.268e-9" in_port="lut_adder.in3" out_port="lut_adder.sumout"/>
+                      <delay_constant max="0.329e-9" min="0.268e-9" in_port="lut_adder.in4" out_port="lut_adder.sumout"/>
+                      <delay_constant max="0.329e-9" min="0.268e-9" in_port="lut_adder.in0" out_port="lut_adder.cout"/>
+                      <delay_constant max="0.329e-9" min="0.268e-9" in_port="lut_adder.in1" out_port="lut_adder.cout"/>
+                      <delay_constant max="0.329e-9" min="0.268e-9" in_port="lut_adder.in2" out_port="lut_adder.cout"/>
+                      <delay_constant max="0.329e-9" min="0.268e-9" in_port="lut_adder.in3" out_port="lut_adder.cout"/>
+                      <delay_constant max="0.329e-9" min="0.268e-9" in_port="lut_adder.in4" out_port="lut_adder.cout"/>
+                      <delay_constant max="0.235e-9" min="0.174e-9" in_port="lut_adder.in0" out_port="lut_adder.out"/>
+                      <delay_constant max="0.235e-9" min="0.174e-9" in_port="lut_adder.in1" out_port="lut_adder.out"/>
+                      <delay_constant max="0.235e-9" min="0.174e-9" in_port="lut_adder.in2" out_port="lut_adder.out"/>
+                      <delay_constant max="0.235e-9" min="0.174e-9" in_port="lut_adder.in3" out_port="lut_adder.out"/>
+                      <delay_constant max="0.235e-9" min="0.174e-9" in_port="lut_adder.in4" out_port="lut_adder.out"/>
                     </pb_type>    
-                    <pb_type name="ff" blif_model=".latch" num_pb="1" class="flipflop">
+                    <pb_type name="ff" blif_model=".latch" num_pb="2" class="flipflop">
                       <input name="D" num_pins="1" port_class="D"/>
                       <output name="Q" num_pins="1" port_class="Q"/>
                       <clock name="clk" num_pins="1" port_class="clock"/>
@@ -395,14 +403,18 @@
                       <T_clock_to_Q max="124e-12" port="ff.Q" clock="clk"/>
                     </pb_type>
                     <interconnect>
-                      <direct name="clock" input="arithmetic_new.clk" output="ff.clk"/>
+                      <direct name="clock1" input="arithmetic_new.clk" output="ff[0:0].clk"/>
+                      <direct name="clock2" input="arithmetic_new.clk" output="ff[1:1].clk"/>
                       <direct name="lut_input0" input="arithmetic_new.in[0:0]" output="lut_adder.in0"/>
                       <direct name="lut_input1" input="arithmetic_new.in[1:1]" output="lut_adder.in1"/>
                       <direct name="lut_input2" input="arithmetic_new.in[2:2]" output="lut_adder.in2"/>
                       <direct name="lut_input3" input="arithmetic_new.in[3:3]" output="lut_adder.in3"/>
                       <direct name="lut_input4" input="arithmetic_new.in[4:4]" output="lut_adder.in4"/>
-                      <direct name="add_to_ff" input="lut_adder.sumout" output="ff.D">
-                        <pack_pattern name="chain" in_port="lut_adder.sumout" out_port="ff.D"/>
+                      <direct name="add_to_ff" input="lut_adder.sumout" output="ff[0:0].D">
+                        <pack_pattern name="chain" in_port="lut_adder.sumout" out_port="ff[0:0].D"/>
+                      </direct>
+                      <direct name="lut_to_ff" input="lut_adder.out" output="ff[1:1].D">
+                        <pack_pattern name="chain" in_port="lut_adder.out" out_port="ff[1:1].D"/>
                       </direct>
                       <direct name="carry_in" input="arithmetic_new.cin" output="lut_adder.cin">
                         <pack_pattern name="chain" in_port="arithmetic_new.cin" out_port="lut_adder.cin"/>
@@ -410,9 +422,13 @@
                       <direct name="carry_out" input="lut_adder.cout" output="arithmetic_new.cout">
                         <pack_pattern name="chain" in_port="lut_adder.cout" out_port="arithmetic_new.cout"/>
                       </direct>
-                      <mux name="sumout" input="ff.Q lut_adder.sumout" output="arithmetic_new.sumout">
+                      <mux name="sumout" input="ff[0:0].Q lut_adder.sumout" output="arithmetic_new.sumout">
                         <delay_constant max="25e-12" in_port="lut_adder.sumout" out_port="arithmetic_new.sumout"/>
-                        <delay_constant max="45e-12" in_port="ff.Q" out_port="arithmetic_new.sumout"/>
+                        <delay_constant max="45e-12" in_port="ff[0:0].Q" out_port="arithmetic_new.sumout"/>
+                      </mux>
+                      <mux name="out" input="ff[1:1].Q lut_adder.out" output="arithmetic_new.out">
+                        <delay_constant max="25e-12" in_port="lut_adder.out" out_port="arithmetic_new.out"/>
+                        <delay_constant max="45e-12" in_port="ff[1:1].Q" out_port="arithmetic_new.out"/>
                       </mux>
                     </interconnect>
                   </pb_type>
@@ -427,6 +443,7 @@
                     </direct>
                     <direct name="direct2" input="ble5.clk" output="arithmetic_new.clk"/>
                     <direct name="direct3" input="arithmetic_new.sumout" output="ble5.out[0:0]"/> 
+                    <direct name="direct4" input="arithmetic_new.out" output="ble5.out[1:1]"/> 
                   </interconnect>
                 </mode>
                 <!--mode name="arithmetic">

@@ -57,7 +57,10 @@ struct mapping_view_storage<true>
 {
   std::vector<uint32_t> mappings;
   std::vector<uint32_t> carry_mappings;
-  std::vector<uint32_t> carry_lut_mappings;
+  std::vector<uint32_t> carry_luta_mappings;
+  std::vector<uint32_t> carry_lutb_mappings;
+  std::vector<bool> carry_lut_mapped;
+  std::vector<bool> carry_lut_mapping_complemented;
   uint32_t mapping_size{0};
   uint32_t carry_mapping_size{0};
   uint32_t carry_lut_mapping_size{0};
@@ -72,7 +75,10 @@ struct mapping_view_storage<false>
   // 0 if not in carry chain, number indicates part of which carry chain
   std::vector<uint32_t> carry_mappings;
   // which luts are actually absorbed into 
-  std::vector<uint32_t> carry_lut_mappings;
+  std::vector<uint32_t> carry_luta_mappings;
+  std::vector<uint32_t> carry_lutb_mappings;
+  std::vector<bool> carry_lut_mapped;
+  std::vector<bool> carry_lut_mapping_complemented;
   uint32_t mapping_size{0};
   uint32_t carry_mapping_size{0};
   uint32_t carry_lut_mapping_size{0};
@@ -154,7 +160,10 @@ public:
 
     _mapping_storage->mappings.resize( ntk.size(), 0 );
     _mapping_storage->carry_mappings.resize( ntk.size(), 0 );
-    _mapping_storage->carry_lut_mappings.resize( ntk.size(), 0 );
+    _mapping_storage->carry_luta_mappings.resize( ntk.size(), 0 );
+    _mapping_storage->carry_lutb_mappings.resize( ntk.size(), 0 );
+    _mapping_storage->carry_lut_mapped.resize( ntk.size(), false );
+    _mapping_storage->carry_lut_mapping_complemented.resize( ntk.size(), false );
 
     if constexpr ( StoreFunction )
     {
@@ -202,28 +211,66 @@ public:
       return true;
     } else { return false; }
   }
+  bool is_carry_lut( node const& n) const {
+    if (n ==0) return false;
+    return _mapping_storage->carry_lut_mapped[this->node_to_index(n)];
+  }
+  bool is_carry_lut_complemented( node const& n) const {
+    return _mapping_storage->carry_lut_mapping_complemented[this->node_to_index(n)];
+  }
 
-  node carry_driver( node const& n) const {
+  node carry_driver( node const& n ) const {
     if (_mapping_storage->carry_mappings[this->node_to_index(n)] != 0) {
-      return _mapping_storage->carry_mappings[this->node_to_index(n)] ;
+      return _mapping_storage->carry_mappings[this->node_to_index(n)];
     } else { return 0; }
   }
-  bool is_carry_lut ( node const& n) const {
-    
-    return true;    
+
+  node carry_luta ( node const& n ) const {
+    if (_mapping_storage->carry_luta_mappings[this->node_to_index(n)] != 0) {
+      return _mapping_storage->carry_luta_mappings[this->node_to_index(n)];
+    } else { return 0; }
+  }
+
+  node carry_lutb ( node const& n ) const {
+    if (_mapping_storage->carry_lutb_mappings[this->node_to_index(n)] != 0) {
+      return _mapping_storage->carry_lutb_mappings[this->node_to_index(n)];
+    } else { return 0; }
   }
 
   // carry index holds the driver for this carry node
   void add_to_carry_mapping( node const& n, uint32_t carry_index )
   {
-
     assert (this->node_to_index( n ) < _mapping_storage->carry_mappings.size());
     assert (_mapping_storage->carry_mappings[this->node_to_index( n )] == 0);
 
     // carry node index
     _mapping_storage->carry_mappings[this->node_to_index( n )] = carry_index;
     _mapping_storage->carry_mapping_size++;
-    _mapping_storage->carry_lut_mapping_size+=carry_index;
+  }
+
+  // carry index holds the driver for this carry node
+  void add_to_carry_LUT_mapping( node const& n, uint32_t carry_LUTa_index, uint32_t carry_LUTb_index, \
+      bool carry_LUTa_complemented, bool carry_LUTb_complemented )
+  {
+    assert (this->node_to_index( n ) < _mapping_storage->carry_luta_mappings.size());
+    assert (this->node_to_index( n ) < _mapping_storage->carry_lutb_mappings.size());
+    assert (_mapping_storage->carry_luta_mappings[this->node_to_index( n )] == 0);
+    assert (_mapping_storage->carry_lutb_mappings[this->node_to_index( n )] == 0);
+
+    // carry node index
+    _mapping_storage->carry_luta_mappings[this->node_to_index( n )] = carry_LUTa_index;
+    _mapping_storage->carry_lutb_mappings[this->node_to_index( n )] = carry_LUTb_index;
+    _mapping_storage->carry_lut_mapped[this->node_to_index( carry_LUTa_index  )] = true;
+    _mapping_storage->carry_lut_mapped[this->node_to_index( carry_LUTb_index  )] = true;
+    _mapping_storage->carry_lut_mapping_complemented[this->node_to_index( carry_LUTa_index  )] = carry_LUTa_complemented;
+    _mapping_storage->carry_lut_mapping_complemented[this->node_to_index( carry_LUTb_index  )] = carry_LUTb_complemented;
+    std::cout << "carry node " << this->node_to_index( n ) << ": ";
+    std::cout << _mapping_storage->carry_lut_mapped[this->node_to_index( carry_LUTa_index)] << " ";
+    std::cout << _mapping_storage->carry_lut_mapped[this->node_to_index( carry_LUTb_index)] << " ";
+    std::cout << _mapping_storage->carry_lut_mapping_complemented[this->node_to_index( carry_LUTa_index)] << " ";
+    std::cout << _mapping_storage->carry_lut_mapping_complemented[this->node_to_index( carry_LUTb_index)] << " ";
+    std::cout << "\n";
+    _mapping_storage->carry_lut_mapping_size+=2;
   }
 
   template<typename LeavesIterator>

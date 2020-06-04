@@ -141,6 +141,7 @@ void write_blif( Ntk const& ntk, std::ostream& os, bool carry_mapping, bool xili
     if ( topo_ntk.is_constant( n ) || topo_ntk.is_pi( n ) )
       return; /* continue */
 
+
     // If a carry node is seen, it should be written out differently
     // We save all the carry node info for printing later so we can keep
     // LUT names as expected instead of inserting new nodes in between
@@ -175,17 +176,25 @@ void write_blif( Ntk const& ntk, std::ostream& os, bool carry_mapping, bool xili
       } 
     } else if (topo_ntk.is_carry(n)) {
 
-      uint32_t a = next_node++;
-      uint32_t b = next_node++;
       uint32_t cin = topo_ntk.node_to_index(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1));;
       uint32_t out = topo_ntk.node_to_index(n);
+      uint32_t a = 0; 
+      if (topo_ntk.get_carry_LUTb(n) <= 1) 
+        a = next_node++; 
+      else 
+        a = topo_ntk.get_carry_LUTb(n);
+      uint32_t b = 0;
+      if (topo_ntk.get_carry_LUTa(n) <= 1) 
+        b = next_node++; 
+      else 
+        b = topo_ntk.get_carry_LUTa(n);
 
       os << fmt::format( ".names " );
       os << fmt::format( "n{} n{} n{} n{}\n", a, b, cin, out );
       os << fmt::format( "110 1\n");
       os << fmt::format( "101 1\n");
       os << fmt::format( "011 1\n");
-      os << fmt::format( "111 1\n\n");
+      os << fmt::format( "111 1\n");
       
       auto const func = topo_ntk.node_function( n );
       auto list_of_cubes = isop(func);
@@ -260,7 +269,10 @@ void write_blif( Ntk const& ntk, std::ostream& os, bool carry_mapping, bool xili
         if (should_be_constant_1 != 0) os << fmt::format( "n{}\n1\n", b );
         else os << fmt::format( "n{}\n0\n", b );
       }
+      os << fmt::format( "\n" );
     } else {
+
+      if (topo_ntk.is_carry_LUT(n)) return;
 
       auto const func = topo_ntk.node_function( n );
 
@@ -280,7 +292,7 @@ void write_blif( Ntk const& ntk, std::ostream& os, bool carry_mapping, bool xili
       for ( const auto& cube : isop( func ) )
       {
         cube.print( topo_ntk.fanin_size( n ), os );
-        os << " 1\n";
+        os << fmt::format(" 1\n");
       }
     }
   });
@@ -306,8 +318,6 @@ void write_blif( Ntk const& ntk, std::ostream& os, bool carry_mapping, bool xili
           os << "\n";
         }
 
-        // testing last node inversion
-        
 
         // First node determins whether this is the beginning of the CLB
         // Carry in cannot be reached from external routing
@@ -317,7 +327,7 @@ void write_blif( Ntk const& ntk, std::ostream& os, bool carry_mapping, bool xili
           os << (".subckt lut_adder ");
           os << fmt::format( "in{}=n{} ", 0, topo_ntk.node_to_index(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1)));
           os << fmt::format( "in{}=unconn in{}=unconn in{}=unconn in{}=unconn ", 1,2,3,4 );
-          os << fmt::format( "cin=unconn cout=c{} sumout=unconn{}\n", next_node, next_node);
+          os << fmt::format( "cin=unconn cout=c{} sumout=unconn{} out=unconn1{}\n", next_node, next_node, next_node);
           current_alm++;
         }
 
@@ -354,6 +364,13 @@ void write_blif( Ntk const& ntk, std::ostream& os, bool carry_mapping, bool xili
         }
 
         os << fmt::format("cout=c{} ", topo_ntk.node_to_index( n ) );
+        uint32_t out_node = next_node++;
+        if ( topo_ntk.get_carry_LUTa(n) > 1 ) 
+          out_node = topo_ntk.get_carry_LUTa(n);
+        else if ( topo_ntk.get_carry_LUTb(n) > 1 )
+          out_node = topo_ntk.get_carry_LUTb(n);
+      
+        os << fmt::format("out=n{} ", out_node );
         os << fmt::format("sumout=n{}\n", topo_ntk.node_to_index( n ) );
 
         clb_input_count+=topo_ntk.fanin_size(n)-1 ; //-1 for the carryin
@@ -546,7 +563,7 @@ void write_blif( Ntk const& ntk, std::ostream& os, bool carry_mapping, bool xili
   if (carry_mapping) {
     os << "\n.model lut_adder\n";
     os << ".inputs in0 in1 in2 in3 in4 cin\n";
-    os << ".outputs sumout cout\n";
+    os << ".outputs sumout cout out\n";
     os << ".blackbox\n";
     os << ".end\n";
   }
