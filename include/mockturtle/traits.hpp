@@ -39,7 +39,7 @@
 #include <kitty/traits.hpp>
 
 #define LUT_DELAY 20 
-#define LUT_ADDER_DELAY 40 
+#define LUT_ADDER_DELAY 28 
 #define CARRY_DELAY 1
 
 namespace mockturtle

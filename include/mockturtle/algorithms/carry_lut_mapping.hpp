@@ -70,6 +70,9 @@ struct carry_lut_mapping_params
   /* Cost function to be used. */ 
   int cost{1};
 
+  /* 5-LUT sharing. */
+  bool lut_sharing{true};
+
 };
 
 /*! \brief Statistics for carry_lut_mapping.
@@ -544,7 +547,10 @@ private:
 
     if (max_leaf != index) {
       deepest = find_deepest_LUT(path_for_carry_chain, max_leaf, length+1);
+
       if (deepest)  {
+        uint32_t node_length = 0;
+        std::cout << "count is " << count_path_to_node (path_for_carry_chain, index, index, max_leaf, node_length) << "\n";
         ntk.clear_visited();
         if(add_find_longest_path_in_mapping(path_for_carry_chain, index, index, max_leaf)) {
           if (ps.verbose && ps.verbosity > 2) std::cout << "\t\tAdded path\n";
@@ -1045,9 +1051,9 @@ private:
         for (auto leaf: carry_cut_list[index]) {
           uint32_t leaf_delay = delays[leaf];
         
-          // leaf is the carry in
+          // leafs from carry node get lut + adder delay
           if (carry_driver_nodes[index] == leaf) leaf_delay += CARRY_DELAY;
-          else  leaf_delay += LUT_DELAY + LUT_DELAY; 
+          else  leaf_delay += LUT_ADDER_DELAY; 
 
           if (leaf_delay > updated_delay) {
             updated_delay = leaf_delay;
@@ -1574,8 +1580,8 @@ private:
     // cut_delay returns the delay of LUT
     // add LUT_DELAY to find the delay post carry node
     // NOT using LUT_ADDER_DELAY here (LUT_DELAY + LUT_DELAY)
-    uint32_t cut_1_delay = cut_delay( cut_1 ) + LUT_DELAY;
-    uint32_t cut_2_delay = cut_delay( cut_2 ) + LUT_DELAY;
+    uint32_t cut_1_delay = cut_delay( cut_1 ) + LUT_ADDER_DELAY;
+    uint32_t cut_2_delay = cut_delay( cut_2 ) + LUT_ADDER_DELAY;
     uint32_t carry_delay = delays[cindex_c] + CARRY_DELAY;
     uint32_t cut_delay = std::max( cut_1_delay, cut_2_delay);
     uint32_t new_delay = std::max( cut_delay, carry_delay );
@@ -1586,14 +1592,16 @@ private:
     delays[index] = new_delay;
 
     // Add ONE of the LUTs to exit from ALM directly
-    if (cut_1.size() > 1 && mapped_to_5LUT[cindex_1] == false && (cut_2.size() <= 1 || ntk.fanout_size(cindex_1) > ntk.fanout_size(cindex_2)) ){
-      mapped_to_5LUTa[index] = cindex_1;
-      mapped_to_5LUT [ cindex_1 ] = true;
-      std::cout << "Adding 1 " << cindex_1 << " as the LUT to exit\n";
-    } else if (cut_2.size() > 1 && mapped_to_5LUT[cindex_2] == false  && (cut_1.size() <= 1 || ntk.fanout_size(cindex_2) > ntk.fanout_size(cindex_1)) ){
-      mapped_to_5LUTb[index] = cindex_2;
-      mapped_to_5LUT [ cindex_2 ] = true;
-      std::cout << "Adding 2 " << cindex_2 << " as the LUT to exit\n";
+    if (ps.lut_sharing) {
+      if (cut_1.size() > 1 && mapped_to_5LUT[cindex_1] == false && (cut_2.size() <= 1 || ntk.fanout_size(cindex_1) > ntk.fanout_size(cindex_2)) ){
+        mapped_to_5LUTa[index] = cindex_1;
+        mapped_to_5LUT [ cindex_1 ] = true;
+        std::cout << "Adding 1 " << cindex_1 << " as the LUT to exit\n";
+      } else if (cut_2.size() > 1 && mapped_to_5LUT[cindex_2] == false  && (cut_1.size() <= 1 || ntk.fanout_size(cindex_2) > ntk.fanout_size(cindex_1)) ){
+        mapped_to_5LUTb[index] = cindex_2;
+        mapped_to_5LUT [ cindex_2 ] = true;
+        std::cout << "Adding 2 " << cindex_2 << " as the LUT to exit\n";
+      }
     }
 
     // Set LUT function
@@ -1630,7 +1638,6 @@ private:
 
   // Find the delay of the specific cut
   // It should look for the slowest (max) of all nodes
-  // Returns the slowest + LUT_ADDER_DELAY
   uint32_t cut_delay ( cut_t const& cut ){
     uint32_t time{1u};
 
@@ -1639,7 +1646,7 @@ private:
       time = std::max( time, delays[leaf] );
     }
 
-    return time + LUT_DELAY;
+    return time;
   }
 
   // Lowest cost will get chosen!
@@ -1667,7 +1674,8 @@ private:
     } else if (ps.cost == 4) {
 
      
-      cost += (double)(cut_delay (cuts.cuts(index_1)[i1]) + cut_delay(cuts.cuts(index_2)[i2])) / delay;
+      cost += (double)( cut_delay(cuts.cuts(index_1)[i1]) + LUT_DELAY) / delay;
+      cost += (double)( cut_delay(cuts.cuts(index_2)[i2]) + LUT_DELAY) / delay;
       //cost += (double)((cuts.cuts(index_1)[i1].size() + cuts.cuts(index_2)[i2].size()))/10;
       
     } else {
@@ -1712,10 +1720,10 @@ private:
       cost += 0.5*(nshared + nshared + nshared2); 
 
     } else if (cost_type == 4) {
-      cost += (1.0/(double)cut_delay (cuts.cuts(index1_1)[i1]));
-      cost += (1.0/(double)cut_delay (cuts.cuts(index1_2)[i2]));
-      cost += (1.0/(double)cut_delay (cuts.cuts(index2_1)[j1]));
-      cost += (1.0/(double)cut_delay (cuts.cuts(index2_2)[j2]));
+      cost += (1.0/(double)(cut_delay (cuts.cuts(index1_1)[i1] )+ LUT_DELAY));
+      cost += (1.0/(double)(cut_delay (cuts.cuts(index1_2)[i2] )+ LUT_DELAY));
+      cost += (1.0/(double)(cut_delay (cuts.cuts(index2_1)[j1] )+ LUT_DELAY));
+      cost += (1.0/(double)(cut_delay (cuts.cuts(index2_2)[j2] )+ LUT_DELAY));
       cost *= 20; 
       cost *= (1 + nshared1 + nshared2 + nshared);
       
@@ -2059,6 +2067,8 @@ private:
         if ( ntk.is_constant( n ) || ntk.is_pi( n ) || ntk.is_cell_root( n ) )  
           continue;
 
+        if ( map_refs[n] == 0 ) assert(0);
+        
         const auto index = ntk.node_to_index( n );
 
         if (ps.verbose && ps.verbosity > 3) std::cout << "Node* " << n;
@@ -2362,8 +2372,8 @@ private:
   void print_cut_cost (uint32_t i, uint32_t i1, uint32_t i2, uint32_t cut1, uint32_t cut2, double cost) {
     std::cout << "\tCut " << cut1 << " " << cut2 <<": ";
     std::cout << cost << "\n";
-    std::cout << "\t\t" << i1 << ":" << cuts.cuts(i1)[cut1] << " " << cut_delay(cuts.cuts(i1)[cut1])<< "\n";
-    std::cout << "\t\t" << i2 << ":" << cuts.cuts(i2)[cut2] << " " << cut_delay(cuts.cuts(i2)[cut2])<< "\n";
+    std::cout << "\t\t" << i1 << ":" << cuts.cuts(i1)[cut1] << " " << cut_delay(cuts.cuts(i1)[cut1]) + LUT_DELAY << "\n";
+    std::cout << "\t\t" << i2 << ":" << cuts.cuts(i2)[cut2] << " " << cut_delay(cuts.cuts(i2)[cut2]) + LUT_DELAY << "\n";
   }
  
 

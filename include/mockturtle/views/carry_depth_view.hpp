@@ -182,7 +182,7 @@ private:
       if (this->is_carry(n) && (this->get_carry_driver(n) == this->get_node(f))) {
         clevel += CARRY_DELAY;
       } else if (this->is_carry(n)) {
-        clevel += LUT_DELAY + LUT_DELAY;
+        clevel += LUT_ADDER_DELAY;
       } else {
         clevel += LUT_DELAY;
       }
