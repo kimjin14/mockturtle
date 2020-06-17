@@ -128,6 +128,33 @@ public:
     return _levels[n];
   }
 
+  void print_levels() const
+  {
+
+    uint32_t n_out_accum = 0;
+    uint32_t n_out = 0;
+    for ( uint32_t d = 0; d < (_depth/20)+1; d++)
+    {
+      n_out = 0;
+      this->foreach_po( [&]( auto const& f ) {
+        if ( _levels[this->get_node(f)]/20 == d )
+          n_out++;
+      });
+      n_out_accum += n_out;
+
+      std::cout << "Level =\t" << d << ".\t";
+      std::cout << "COs =\t" << n_out << ".\t";
+      std::cout << "\t" << std::fixed << std::setprecision(0) << (float)n_out_accum/this->num_pos()*100 << "\%.\n";
+    } 
+
+    n_out = 0;
+    this->foreach_po( [&]( auto const& f ) {
+      if ( _levels[this->get_node(f)]/20 == (_depth/20) )
+        n_out++;
+    });
+    std::cout << "Worst LUT level " << _depth/20 << ", COs = " << n_out << "/" << this->num_pos() << "\n";
+  }
+
   void set_level( node const& n, uint32_t level )
   {
     _levels[n] = level;
@@ -150,11 +177,6 @@ private:
   uint32_t compute_levels( node const& n )
   {
 
-    //if ( this->is_carry(n) ) {
-    //  _levels_type[n] = 1;
-    //} else {
-    //  _levels_type[n] = 0;
-    //}
     if ( this->visited( n ) == this->trav_id() )
     {
       return _levels[n];
@@ -187,7 +209,6 @@ private:
         clevel += LUT_DELAY;
       }
 
- 
       if (clevel > level) {
         level = clevel;
         slowest_node = this->get_node(f);
@@ -207,7 +228,6 @@ private:
   void compute_levels()
   {
     _depth = 0;
-    _carry_depth = 0;
     this->foreach_po( [&]( auto const& f ) {
       auto clevel = compute_levels( this->get_node( f ) );
       if ( _count_complements && this->is_complemented( f ) )
@@ -269,9 +289,9 @@ private:
         return;
 
       else if (this->is_carry(n))
-        std::cout << "Node* " << n << ": ";
+        std::cout << "Node* " << n << "(" << _levels[n] << "): ";
       else 
-        std::cout << "Node " << n << ": ";
+        std::cout << "Node " << n << "(" << _levels[n] << "): ";
       this->foreach_fanin( n, [&]( auto fanin ) {
           std::cout << fanin << "(" << _levels[fanin] << ") ";
       } );
@@ -305,7 +325,6 @@ private:
   node_map<uint32_t, Ntk> _levels;
   node_map<uint32_t, Ntk> _levels_type;
   uint32_t _depth;
-  uint32_t _carry_depth;
 };
 
 template<class T>

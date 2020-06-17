@@ -34,6 +34,8 @@
 
 #include <cstdint>
 #include <vector>
+#include <iostream>
+#include <iomanip>
 
 #include "../traits.hpp"
 #include "../utils/node_map.hpp"
@@ -120,6 +122,34 @@ public:
   uint32_t depth() const
   {
     return _depth;
+  }
+
+  // Prints 
+  void print_levels() const
+  {
+
+    uint32_t n_out_accum = 0;
+    uint32_t n_out = 0;
+    for ( uint32_t d = 0; d < _depth+1; d++)
+    {
+      n_out = 0;
+      this->foreach_po( [&]( auto const& f ) {
+        if ( _levels[this->get_node(f)] == d )
+          n_out++;
+      });
+      n_out_accum += n_out;
+
+      std::cout << "Level =\t" << d << ".\t";
+      std::cout << "COs =\t" << n_out << ".\t";
+      std::cout << "\t" << std::fixed << std::setprecision(0) << (float)n_out_accum/this->num_pos()*100 << "\%.\n";
+    } 
+
+    n_out = 0;
+    this->foreach_po( [&]( auto const& f ) {
+      if ( _levels[this->get_node(f)] == _depth )
+        n_out++;
+    });
+    std::cout << "Worst LUT level " << _depth << ", COs = " << n_out << "/" << this->num_pos() << "\n";
   }
 
   uint32_t level( node const& n ) const
