@@ -186,30 +186,6 @@ public:
 
 private:
 
-  void carry_chain_mapping_test () {
-
-      // Determine how many rounds of carry chain mapping
-      uint32_t rounds_carry_mapping = 10;
-      rounds_carry_mapping = num_worst_paths();
-      if (rounds_carry_mapping > ps.max_rounds_carry)
-        rounds_carry_mapping = ps.max_rounds_carry;
-  
-      // Iteratively map paths to carry chain
-      for (uint32_t i = 0; i < rounds_carry_mapping; i++) { 
-
-        if (ps.verbose) std::cout << "Carry Mapping Iteration " \
-          << i << " targetting delay of " << delay << ".\n";
-
-        select_path_and_map();
-
-        update_delay();   
-        print_state();
-      }
-      print_state();
-      std::cout << "There were " << carry_paths.size() << " paths placed on carry chain\n"; 
-  }
-
-
   void carry_chain_mapping () {
 
       // Initialize carry chain mapping struct
@@ -281,194 +257,6 @@ private:
     return total;
   }
 
-  bool add_node_and_cut_to_LUT  (std::vector<node<Ntk>>& path_for_carry_chain, 
-      uint32_t index, uint32_t source_index, uint32_t dest_index, uint32_t& node_length) {
-
-    auto const& n = ntk.index_to_node(source_index);
-
-    if (source_index == dest_index) {
-      return true;
-    }
-
-    if (is_a_carry_node(ntk.index_to_node(index))) {
-      for ( auto leaf : carry_cut_list[index] )
-        if (source_index == leaf) return false;
-    } else {
-      for ( auto leaf : cuts.cuts(index)[0] )
-        if (source_index == leaf) return false;
-    }
- 
-    bool found = false; 
-    for (uint32_t i = 0; i < ntk.fanin_size(n); i++) {
-      auto const leaf = ntk.get_children(n,i);
-      auto const leaf_index = ntk.node_to_index(leaf);
-      if (!is_a_carry_node(leaf) && !ntk.is_constant(leaf))
-        found = add_node_and_cut_to_LUT (path_for_carry_chain, index, leaf_index, dest_index, node_length );
-      if (found) {
-        node_length++;
-        if (ps.verbose && ps.verbosity > 2) std::cout << "adding " << leaf << "\n";
-
-        // Add node to path
-        path_for_carry_chain.push_back(leaf);
-
-        // Update cut list for the carry node
-        std::cout << "\tCut list: ";
-        uint32_t max_delay = 0;
-        for (auto cut_leaf: cuts.cuts(index)[0]) {
-          if (cut_leaf != dest_index) {
-            std::cout << cut_leaf << " ";
-            carry_cut_list[source_index].push_back(cut_leaf);
-            if (delays[cut_leaf] > max_delay) max_delay = delays[cut_leaf];
-          }
-        } 
-        carry_cut_list[source_index].push_back(leaf_index);
-        std::cout << leaf_index << "\n";
-
-        // Update delay
-        std::cout << "\tUpdate delay for node " << source_index;
-        if (map_refs[source_index] <= 0) std::cout << "*";  
-        std::cout << ": " << delays[source_index];
-        delays[source_index] = std::max(max_delay + LUT_ADDER_DELAY, delays[leaf_index] + CARRY_DELAY);
-        std::cout << " -> " << delays[source_index] << "\n";
-
-        // Return that you can map this node to carry
-        return true;
-      }
-    }
-    return found;
-  }
-
-  //cut_t find_children_cut (uint32_t index, uint32_t c_index1) {
-  //  
-  //
-  //}
-
-  // Determine which leaf should be considered for carry chain
-  uint32_t select_leaf( auto cut_list ) {
-
-    uint32_t max_leaf = 0;
-    uint32_t max_delay = 0;
-    float min_fanout{std::numeric_limits<float>::max()};
-
-    // Find worst delay
-    for ( auto leaf : cut_list ) {
-      if (ps.verbose && ps.verbosity > 2) std::cout << "\t" << leaf << ":" << delays[leaf] << "," << flow_refs[leaf] << "," << ntk.fanout_size(leaf) <<"\n"; 
-      if (max_delay < delays[leaf] || (max_delay == delays[leaf] && (ntk.fanout_size(leaf) < min_fanout))) {
-        max_leaf = leaf;
-        max_delay = delays[leaf];
-        min_fanout = flows[leaf];
-      }
-    }
-
-    return max_leaf;
-  }
-
-  // Keep going deeper to its fanin until depth is found
-  bool find_LUT_for_reduction (std::vector<node<Ntk>>& path_for_carry_chain, uint32_t index, uint32_t length) { 
-    
-    if (ps.verbose && ps.verbosity > 2) std::cout << "Index " << index << "(" << delays[index] << "):";
-    //if (delays[index] == 0 || ntk.is_pi(index)) {
-    if (delays[index] == 0 && length > 4) {
-      if (ps.verbose && ps.verbosity > 2) std::cout << "\n";
-      return true;
-    }
-
-    bool deepest = false;
-
-    uint32_t max_leaf = index;
-
-    if (is_a_carry_node(ntk.index_to_node(index))) {
-      if (ps.verbose && ps.verbosity > 2) std::cout << " carry\n"; 
-      max_leaf = select_leaf(carry_cut_list[index]);
-    } else {
-      if (ps.verbose && ps.verbosity > 2) std::cout << " lut\n"; 
-      max_leaf = select_leaf(cuts.cuts(index)[0]);
-    }
-
-    if (max_leaf != index) {
-      deepest = find_LUT_for_reduction (path_for_carry_chain, max_leaf, length+1);
-      if (deepest)  {
-        uint32_t node_length = 0;
-        std::cout << "count is " << count_path_to_node (path_for_carry_chain, index, index, max_leaf, node_length) << "\n";
-        if(add_node_and_cut_to_LUT(path_for_carry_chain, index, index, max_leaf, node_length)) {
-          //if (node_length == 1) {
-          //  std::cout << "\t\tShould add cut here\n";
-          //  path_for_carry_chain.push_back(index);
-          //  for (auto cut_leaf: cuts.cuts(index)[0]) {
-          //    if (cut_leaf != max_leaf) carry_cut_list[index].push_back(cut_leaf);
-          //  } carry_cut_list[index].push_back(max_leaf);
-          //}
-          //if (ps.verbose && ps.verbosity > 2) std::cout << "\t\tAdded path of length " << node_length << "\n";
-        } else { //cannot put this in carry
-          if (ps.verbose && ps.verbosity > 2) std::cout << "\t\tCannot add to path\n";
-          return false;
-        } 
-      }
-    } 
-
-    return deepest;
-  }
-
-  void select_path_and_map () {
-
-    bool reduce_possible = true;
-    std::vector<node<Ntk>> path_for_carry_chain;
-    uint32_t delay_offset = 2*LUT_DELAY;
-
-    while (reduce_possible) {
-  
-      for (uint32_t curr_offset = 0; curr_offset <= delay_offset; curr_offset+=LUT_DELAY) {
-        for ( auto it = top_order.rbegin(); it != top_order.rend(); ++it ) {
-          const auto node = *it;
-          const auto index = ntk.node_to_index(node);
-
-          // Node with worst delay
-          if (delays[index] >= delay-curr_offset&& delay != 0 && !ntk.is_pi(node)) {
-            std::cout << "Found target index " << index << "(" << delays[index] << ")\n";
-
-            // Try to place a path starting from this node
-            if (find_LUT_for_reduction(path_for_carry_chain,index, 0)) {
-              if (!is_a_carry_node(index)) {
-                //std::cout << "adding " << index << "\n";
-                path_for_carry_chain.push_back(index);
-                //carry_nodes[index] += 1;
-              }
-              // Only place one path at a time
-              break;
-            } else {
-              path_for_carry_chain.clear();
-            }
-          }
-        }
-        if (!path_for_carry_chain.empty()) break;
-      }
-      if (path_for_carry_chain.empty()) break;
-
-      print_path(path_for_carry_chain);
-
-      // Keep the path information in carry_paths
-      carry_paths.push_back(path_for_carry_chain);
-
-      // Update driver info for figuring out which node drives which carry
-      // in case there are 2 nodes being driving a carry node
-      for (uint32_t j = 1; j < path_for_carry_chain.size(); j++) {
-        carry_nodes[path_for_carry_chain[j]] += 1;
-        carry_driver_nodes[path_for_carry_chain[j]] = path_for_carry_chain[j-1];
-      }
-
-      // Clear path and decide whether to run again
-      path_for_carry_chain.clear();
-      reduce_possible = false;
-    }
-
-  }
-
-
-
-  ///////////////////////////////////////////////////////////////
-  // Selecting Path to be Placed on Carry Chain
-  ///////////////////////////////////////////////////////////////
-
   // Depth first search 
   // Find path from output of LUT to target input LUT
   bool add_find_longest_path_in_mapping (std::vector<node<Ntk>>& path_for_carry_chain, 
@@ -520,6 +308,7 @@ private:
     float min_fanout{std::numeric_limits<float>::max()};
 
     if (is_a_carry_node(ntk.index_to_node(index))) {
+      return false;
       if (ps.verbose && ps.verbosity > 2) std::cout << " carry\n"; 
       for ( auto leaf : carry_cut_list[index] ) {
         if (!is_a_carry_node(leaf)) { 
@@ -529,7 +318,8 @@ private:
             max_delay = delays[leaf];
             min_fanout = flows[leaf];
           }
-        }
+        } else 
+          if (ps.verbose && ps.verbosity > 2) std::cout << "\tx" << leaf << ":" << delays[leaf] << "," << flow_refs[leaf] << "," << ntk.fanout_size(leaf) <<"\n"; 
       }
     } else {
       if (ps.verbose && ps.verbosity > 2) std::cout << " lut\n"; 
@@ -541,7 +331,8 @@ private:
             max_delay = delays[leaf];
             min_fanout = ntk.fanout_size(leaf);
           }
-        }
+        } else 
+          if (ps.verbose && ps.verbosity > 2) std::cout << "\tx" << leaf << ":" << delays[leaf] << "," << flow_refs[leaf] << "," << ntk.fanout_size(leaf) <<"\n"; 
       }
     }
 
@@ -566,10 +357,13 @@ private:
   bool path_selection (std::vector<node<Ntk>>& path_for_carry_chain, uint32_t delay_offset) {
 
     for (uint32_t curr_offset = 0; curr_offset <= delay_offset; curr_offset+=LUT_DELAY) {
-      for ( auto it = top_order.rbegin(); it != top_order.rend(); ++it ) {
-        const auto node = *it;
+      //for ( auto it = top_order.rbegin(); it != top_order.rend(); ++it ) {
+      ntk.foreach_po( [&]( auto const& s ) {
+        //const auto node = *it;
+        const auto node = ntk.get_node(s);
         const auto index = ntk.node_to_index(node);
 
+        if (!path_for_carry_chain.empty()) return;
         // Node with worst delay
         if (delays[index] >= delay-curr_offset && delay != 0 /*&& map_refs[index] > 0 */ && !ntk.is_pi(node)) {
           std::cout << "Found target index " << index << "(" << delays[index] << ")\n";
@@ -577,17 +371,18 @@ private:
           // Try to place a path starting from this node
           if (find_deepest_LUT(path_for_carry_chain,index, 0)) {
             if (!is_a_carry_node(index)) {
-              //std::cout << "adding " << index << "\n";
+              std::cout << "adding " << index << "\n";
               path_for_carry_chain.push_back(index);
               //carry_nodes[index] += 1;
             }
             // Only place one path at a time
-            break;
+            return;
+            //break;
           } else {
             path_for_carry_chain.clear();
           }
         }
-      }
+      } );
       if (!path_for_carry_chain.empty()) break;
     }
     if (path_for_carry_chain.empty()) return false;
@@ -871,7 +666,7 @@ private:
           max_i_2 = cut_i_2;
         }
         if (ps.verbose && ps.verbosity > 2) {
-          print_cut_cost (i, i_child[0], i_child[1], cut_i_1, cut_i_2, cost); 
+          //print_cut_cost (i, i_child[0], i_child[1], cut_i_1, cut_i_2, cost); 
         }
       }
     }
@@ -1013,8 +808,8 @@ private:
         }
         if (ps.verbose && ps.verbosity > 3) {
           //print_cuts (cut_i1_1, cut_i1_2, cut_i2_1, cut_i2_2, i1_child, i2_child, cost); 
-          print_cut_cost (i1, i1_child[0], i1_child[1], cut_i1_1, cut_i1_2, cost); 
-          print_cut_cost (i2, i2_child[0], i2_child[1], cut_i2_1, cut_i2_2, cost); 
+          //print_cut_cost (i1, i1_child[0], i1_child[1], cut_i1_1, cut_i1_2, cost); 
+          //print_cut_cost (i2, i2_child[0], i2_child[1], cut_i2_1, cut_i2_2, cost); 
         }
           }
         }
@@ -2067,11 +1862,11 @@ private:
         if ( ntk.is_constant( n ) || ntk.is_pi( n ) || ntk.is_cell_root( n ) )  
           continue;
 
-        if ( map_refs[n] == 0 ) assert(0);
         
         const auto index = ntk.node_to_index( n );
 
         if (ps.verbose && ps.verbosity > 3) std::cout << "Node* " << n;
+        if ( map_refs[n] == 0 ) assert(0);
 
         // Add node as carry
         std::vector<node<Ntk>> nodes;
@@ -2471,13 +2266,13 @@ private:
   void print_state()
   {
 
-    ntk.foreach_node( [&]( auto n, auto ) {
+    /*ntk.foreach_node( [&]( auto n, auto ) {
       if ( ntk.fanout_size(n) == 0 ) 
         std::cout << "Node " << n << " has 0 output\n";
     });
     ntk.foreach_po( [&]( auto const& s ) {
       std::cout << "PO " << ntk.get_node(s) << ":" << delays[ntk.get_node(s)]<<"\n";
-    });
+    });*/
     if (ps.verbosity > 4 ) {
       for ( auto i = 0u; i < ntk.size(); ++i )
       {

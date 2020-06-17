@@ -22,7 +22,7 @@ using namespace mockturtle;
 std::string getFileName(const std::string& s) {
   std::string s_rtn;
   s_rtn = s.substr(s.find_last_of('/')+1);
-  s_rtn.erase(0,s_rtn.find('.')+1); 
+  //s_rtn.erase(0,s_rtn.find('.')+1); 
   s_rtn.erase(s_rtn.find('.')); 
   return s_rtn;
 }
@@ -71,13 +71,22 @@ int main (int argc, char *argv[]){
 
   mapping_view <mig_network, true> carry_mapped_mig { mig };
   carry_lut_mapping <mapping_view<mig_network,true>,true> (carry_mapped_mig, mapping_params);  
-  const auto klut_carry_opt = collapse_mapped_network<klut_network>( carry_mapped_mig );
+  auto klut_carry_opt = collapse_mapped_network<klut_network>( carry_mapped_mig );
   if (klut_carry_opt == std::nullopt) {
     std::cout << "LUT and carry does not have mapping\n";
     return 0;
   }
-  auto const& klut_carry = *klut_carry_opt;
+  auto& klut_carry = *klut_carry_opt;
   carry_depth_view depth_klut_carry { klut_carry }; 
+
+  klut_carry.foreach_node( [&]( auto const& n ) {
+    if ( klut_carry.is_constant( n ) || klut_carry.is_pi( n ) || klut_carry.is_carry(n)  )
+      return; /* continue */
+    if (klut_carry.is_carry_LUT(n)) {
+      klut_carry.increase_carry_LUT_savings();
+      return;
+    }
+  });
  
   // Write blif output. Last line will be a comment on what run it was 
   write_blif(klut_carry, "blif/" + outputName+".blif", true/*carry mapping*/, mapping_params.xilinx_arch );
@@ -87,14 +96,19 @@ int main (int argc, char *argv[]){
           << mapping_params.max_rounds_carry  << " cost=" << mapping_params.cost << "\n\n"; 
   blifOut.close();
 
-  // Write blif for CEC. Doesn't have to happen every run.
-  write_blif(klut_carry, "blifcec/" + outputName +".cec.blif", false/*carry mapping*/, mapping_params.xilinx_arch );
-
   std::cout << "Results for " << outputName  << ",";
   std::cout << mig.num_gates() << "," << depth_mig.depth();
   //std::cout << ",=" << klut_carry.num_gates() << "+" << klut_carry.num_carry() << "/2," << float(depth_klut_carry.depth()/LUT_DELAY);
-  std::cout << "," << klut_carry.num_gates() + klut_carry.num_carry() << "," << float(depth_klut_carry.depth()/LUT_DELAY);
+  std::cout << "," << klut_carry.num_gates() + klut_carry.num_carry() - klut_carry.num_carry_LUT(); 
+  std::cout << "," << klut_carry.num_carry();
+  std::cout << "," << klut_carry.num_carry_LUT() << "," << float(depth_klut_carry.depth()/LUT_DELAY);
   std::cout << "\n";
+
+  depth_mig.print_levels();
+  depth_klut_carry.print_levels();
+
+  // Write blif for CEC. Doesn't have to happen every run.
+  write_blif(klut_carry, "blifcec/" + outputName +".cec.blif", false/*carry mapping*/, mapping_params.xilinx_arch );
 
   mig.clear_values();
 

@@ -161,6 +161,8 @@ private:
     /* truth tables for constants */
     _storage->nodes[0].data[1].h1 = 0;
     _storage->nodes[1].data[1].h1 = 1;
+
+    _num_used_carry_LUT_nodes = 0;
   }
 #pragma endregion
 
@@ -243,7 +245,11 @@ public:
     }
     return 0;
   }
- 
+
+  void increase_carry_LUT_savings (void) {
+    _num_used_carry_LUT_nodes++;
+    std::cout << "num is " << _num_used_carry_LUT_nodes << "\n";
+  } 
   node get_carry_driver( node const& n) {
 
     for (uint32_t i = 0; i < _carry_nodes.size(); i++) {
@@ -374,7 +380,6 @@ signal create_maj( signal a, signal b, signal c )
       const auto it = _storage->hash.find( node );
       if ( it != _storage->hash.end() )
       {
-        std::cout << "OVERLAP \n";
         return it->second;
       }
     }
@@ -479,6 +484,11 @@ signal create_maj( signal a, signal b, signal c )
   {
     return static_cast<uint32_t>(_storage->nodes.size() - _storage->inputs.size() - 2 \
        - _carry_nodes.size());
+  }
+
+  auto num_carry_LUT() const
+  {
+    return static_cast<uint32_t> (_num_used_carry_LUT_nodes);
   }
 
   auto num_carry() const
@@ -694,6 +704,7 @@ public:
   std::vector<uint64_t> _carry_driver_nodes;
   std::vector<uint64_t> _carry_LUTa_nodes;
   std::vector<uint64_t> _carry_LUTb_nodes;
+  uint32_t _num_used_carry_LUT_nodes;
 };
 
 } // namespace mockturtle
