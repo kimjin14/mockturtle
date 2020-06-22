@@ -108,14 +108,16 @@ void write_blif( Ntk const& ntk, std::ostream& os, bool carry_mapping, bool xili
   {
     os << ".outputs ";
     uint32_t count = 0;
-    topo_ntk.foreach_po( [&]( auto index ) {
+    //topo_ntk.foreach_po( [&]( auto const& n, auto index ) {
+    for (uint32_t index = 0; index < topo_ntk.num_pos(); index++) {
         os << fmt::format( "po{} ", index );
+        
         if (count > 100) {
           os << fmt::format( "\\\n" );
           count = 0;
         } else
           count++;
-      } );
+    }
     os << "\n";
   }
 
