@@ -255,7 +255,7 @@ private:
       return;
    
     uint32_t worst_delay = 0;
-    auto worst_node = 0;
+    auto worst_node = n;
     uint32_t critical_index = 0;
 
     this->foreach_fanin( n, [&]( auto const& f ) {

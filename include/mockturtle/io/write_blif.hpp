@@ -108,7 +108,7 @@ void write_blif( Ntk const& ntk, std::ostream& os, bool carry_mapping, bool xili
   {
     os << ".outputs ";
     uint32_t count = 0;
-    topo_ntk.foreach_po( [&]( auto const& n, auto index ) {
+    topo_ntk.foreach_po( [&]( auto index ) {
         os << fmt::format( "po{} ", index );
         if (count > 100) {
           os << fmt::format( "\\\n" );
@@ -149,10 +149,6 @@ void write_blif( Ntk const& ntk, std::ostream& os, bool carry_mapping, bool xili
   
       auto const func = topo_ntk.node_function( n );
       auto list_of_cubes = isop(func);     
-      uint32_t count = 0;
-
-      uint32_t should_be_constant_0 = 0;
-      uint32_t should_be_constant_1 = 0;
 
       // This checks whether the the current carry node's last child is the last node in the
       // existing carry chain. If true, insert next, else, create a new chain.
@@ -309,8 +305,8 @@ void write_blif( Ntk const& ntk, std::ostream& os, bool carry_mapping, bool xili
     for (auto n: carry_chain) {
     
       if (xilinx_arch) {
-       if (current_alm == 8) {
-          assert(clb_input_count < 50 && std::cout << "There are " << clb_input_count << " inputs to CLB.\n");
+       if (current_alm == 30) {
+          //assert(clb_input_count < 50 && std::cout << "There are " << clb_input_count << " inputs to CLB.\n");
 
           current_alm = 0;
           clb_input_count = 0;

@@ -250,12 +250,12 @@ public:
     _num_used_carry_LUT_nodes++;
     std::cout << "num is " << _num_used_carry_LUT_nodes << "\n";
   } 
-  node get_carry_driver( node const& n) {
 
+  node get_carry_driver( node const& n) {
     for (uint32_t i = 0; i < _carry_nodes.size(); i++) {
       if (index_to_node(_carry_nodes[i]) == n) return _carry_driver_nodes[i]; 
     }
-
+    return 0;
   }
 
 
