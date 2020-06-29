@@ -55,18 +55,20 @@ int main (int argc, char *argv[]){
   carry_lut_mapping_params mapping_params;
 
   // Set carry LUT mapping parameters
+  if (argc > 3 && argv[3] == std::string("delay"))
+    mapping_params.delay = true;
+  if (argc > 4 && argv[4] == std::string("xilinx"))
+    mapping_params.xilinx_arch = true;
   if (argc > 2 && argv[2] == std::string("baseline")) {
     mapping_params.carry_mapping = false;
     outputName = getFileName(argv[1]);
   } else {
     mapping_params.carry_mapping = true;
     outputName = getFileName(argv[1]) + "_carry";
-    if (argc > 3 && argv[3] == std::string("xilinx"))
-      mapping_params.xilinx_arch = true;
-    if (argc > 4)
-      mapping_params.max_rounds_carry = std::stoi(argv[4]); 
     if (argc > 5)
-      mapping_params.cost = std::stoi(argv[5]);
+      mapping_params.max_rounds_carry = std::stoi(argv[5]); 
+    if (argc > 6)
+      mapping_params.cost = std::stoi(argv[6]);
   }
 
   mapping_view <mig_network, true> carry_mapped_mig { mig };
@@ -104,8 +106,9 @@ int main (int argc, char *argv[]){
   std::cout << "," << klut_carry.num_carry_LUT() << "," << float(depth_klut_carry.depth()/LUT_DELAY);
   std::cout << "\n";
 
-  depth_mig.print_levels();
-  depth_klut_carry.print_levels();
+  //depth_mig.print_levels();
+  //depth_klut_carry.print_levels();
+  //depth_klut_carry.print_num_paths_at_max_level();
 
   // Write blif for CEC. Doesn't have to happen every run.
   write_blif(klut_carry, "blifcec/" + outputName +".cec.blif", false/*carry mapping*/, mapping_params.xilinx_arch );

@@ -128,6 +128,38 @@ public:
     return _levels[n];
   }
 
+
+  void count_num_paths_at_max_level ( node const& n, uint32_t& count )
+  {
+    // Max path = 10million
+    if (count == 10000000) return;
+
+    if ( this->is_constant( n ) || this->is_pi( n ) )
+    {
+      count++;
+      return;
+    }
+    this->foreach_fanin( n, [&]( auto const& f ) {
+      if ( (_levels[this->get_node(f)] == _levels[n]-1) || (_levels[this->get_node(f)] == _levels[n]-28) ||
+           (_levels[this->get_node(f)] == _levels[n]-20)) {
+        count_num_paths_at_max_level ( this->get_node(f), count );
+      }
+    }); 
+    return;
+  }
+
+  void print_num_paths_at_max_level() 
+  {
+    uint32_t n_path = 0;
+    this->foreach_po( [&]( auto const& f ) {
+      if ( _levels[this->get_node(f)] == _depth)
+        count_num_paths_at_max_level( this->get_node(f), n_path );
+    });
+
+    std::cout << "Paths at depth " << _depth << " is " << n_path << "\n";
+
+  }
+
   void print_levels() const
   {
 

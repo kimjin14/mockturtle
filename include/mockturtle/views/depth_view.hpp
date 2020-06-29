@@ -125,6 +125,34 @@ public:
   }
 
   // Prints 
+
+  int count_num_paths_at_max_level ( node const& n )
+  {
+    if ( this->is_constant( n ) || this->is_pi( n ) )
+    {
+      return 1;
+    }
+    uint32_t count = 0;
+    this->foreach_fanin( n, [&]( auto const& f ) {
+      if ( _levels[this->get_node(f)] == _levels[n]-1 )
+        count +=count_num_paths_at_max_level ( this->get_node(f) );
+    }); 
+    
+    return count;
+  }
+
+  void print_num_paths_at_max_level() const
+  {
+    uint32_t n_path = 0;
+    this->foreach_po( [&]( auto const& f ) {
+      if ( _levels[this->get_node(f)] == _depth)
+        n_path += count_num_paths_at_max_level( this->get_node(f) );
+    });
+
+    std::cout << "Paths at depth " << _depth << " is " << n_path << "\n";
+
+  }
+
   void print_levels() const
   {
 
