@@ -307,7 +307,7 @@ void write_blif( Ntk const& ntk, std::ostream& os, bool carry_mapping, bool xili
     for (auto n: carry_chain) {
     
       if (xilinx_arch) {
-       if (current_alm == 30) {
+       if (current_alm == 100) {
           //assert(clb_input_count < 50 && std::cout << "There are " << clb_input_count << " inputs to CLB.\n");
 
           current_alm = 0;

@@ -71,7 +71,7 @@ struct carry_lut_mapping_params
   int cost{1};
 
   /* 5-LUT sharing. */
-  bool lut_sharing{true};
+  bool lut_sharing{false};
 
   /* Delay optimized tech mapping */
   bool delay {false};
@@ -335,7 +335,8 @@ private:
   bool find_deepest_LUT (std::vector<node<Ntk>>& path_for_carry_chain, uint32_t index, uint32_t length) { 
     
     if (ps.verbose && ps.verbosity > 2) std::cout << "Index " << index << "(" << delays[index] << "):";
-    if (delays[index] == 20 &&  length > 7) {
+    //if (delays[index] == 20 &&  length > 6) {
+    if (delays[index] == 20 && length >= 5) {
       auto leaf = cuts.cuts( index )[0].begin()[0];
       if(!add_find_longest_path_in_mapping(path_for_carry_chain, index, index, leaf)) {
         if (ps.verbose && ps.verbosity > 2) std::cout << "\n\t\tnot added\n";
@@ -357,16 +358,6 @@ private:
         if (deepest) {
           path_for_carry_chain.push_back(max_leaf);
         }
-        //if (deepest)  {
-          //uint32_t node_length = 0;
-          //std::cout << "count is " << count_path_to_node (path_for_carry_chain, index, index, max_leaf, node_length) << "\n";
-          //ntk.clear_visited();
-          //if(add_find_longest_path_in_mapping(path_for_carry_chain, index, index, max_leaf)) {
-          //  if (ps.verbose && ps.verbosity > 2) std::cout << "\t\tAdded path\n";
-          //} else { //cannot put this in carry
-          //  return false;
-        //  } 
-        //}
       }
     } else {
       if (ps.verbose && ps.verbosity > 2) std::cout << " lut\n"; 
