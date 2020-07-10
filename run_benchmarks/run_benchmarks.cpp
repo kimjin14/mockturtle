@@ -93,9 +93,12 @@ int main (int argc, char *argv[]){
   // Write blif output. Last line will be a comment on what run it was 
   write_blif(klut_carry, "blif/" + outputName+".blif", true/*carry mapping*/, mapping_params.xilinx_arch );
   std::ofstream blifOut ("blif/" + outputName+".blif", std::ofstream::out | std::ofstream::app );
-  blifOut << "# " << outputName << " baseline=" << !mapping_params.carry_mapping
-          << " xilinx=" << mapping_params.xilinx_arch << " maxCarryRounds="
-          << mapping_params.max_rounds_carry  << " cost=" << mapping_params.cost << "\n\n"; 
+  blifOut << "# " << outputName
+          << " baseline=" << !mapping_params.carry_mapping
+          << " delay=" << mapping_params.delay 
+          << " xilinx=" << mapping_params.xilinx_arch 
+          << " maxCarryRounds=" << mapping_params.max_rounds_carry
+          << " cost=" << mapping_params.cost << "\n\n"; 
   blifOut.close();
 
   std::cout << "Results for " << outputName  << ",";
@@ -106,6 +109,12 @@ int main (int argc, char *argv[]){
   std::cout << "," << klut_carry.num_carry_LUT() << "," << float(depth_klut_carry.depth()/LUT_DELAY);
   std::cout << "\n";
 
+  std::cout << "# " << outputName
+          << " baseline=" << !mapping_params.carry_mapping
+          << " delay=" << mapping_params.delay 
+          << " xilinx=" << mapping_params.xilinx_arch 
+          << " maxCarryRounds=" << mapping_params.max_rounds_carry
+          << " cost=" << mapping_params.cost << "\n\n"; 
   //depth_mig.print_levels();
   //depth_klut_carry.print_levels();
   //depth_klut_carry.print_num_paths_at_max_level();

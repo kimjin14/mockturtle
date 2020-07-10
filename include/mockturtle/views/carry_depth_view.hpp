@@ -268,8 +268,8 @@ private:
       }
       _depth = std::max( _depth, clevel );
     } );
-    print_depth_of_all_nodes();
-    print_critical_path();
+    //print_depth_of_all_nodes();
+    //print_critical_path();
     
   }
 
