@@ -227,7 +227,6 @@ public:
         }
       }   
       else if ( ntk.is_complemented( f ) && node_driver_type[f] == driver_type::mixed ) {
-        std::cout << "THIS OUTPUT " << ntk.get_node(f) << "SHOUDL BE HANDELDC\n";
         dest.create_po( opposites[ntk.get_node( f )] );
       }
       else

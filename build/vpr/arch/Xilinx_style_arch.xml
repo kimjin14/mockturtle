@@ -689,8 +689,8 @@
 
 
         <fc in_type="frac" in_val="0.15" out_type="frac" out_val="0.10">
-            <fc_override port_name="cin" fc_type="frac" fc_val="0.1"/>
-            <fc_override port_name="cout" fc_type="frac" fc_val="0.1"/>
+            <fc_override port_name="cin" fc_type="frac" fc_val="0"/>
+            <fc_override port_name="cout" fc_type="frac" fc_val="0"/>
         </fc>
 
         <pinlocations pattern="spread"/>
