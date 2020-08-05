@@ -110,41 +110,51 @@ def parse_file(file_name):
   total_delay += (carry_lut_value + carry_lut_routing_value); 
   total_delay += (carry_5lut_value + carry_5lut_routing_value); 
   total_delay += (carry_cin_value);
+  
 
   #print file_name,
-  print str(lut_count)+"("+str(lut_value)+")&",
-  print str(routing_count)+"("+str(routing_value)+")&",
-  print str(carry_lut_count)+"("+str(carry_lut_value)+")&",
-  print str(carry_5lut_count)+"("+str(carry_5lut_value)+")&",
-  print str(carry_lut_routing_count)+"("+str(carry_lut_routing_value)+")&",
-  print str(carry_5lut_routing_count)+"("+str(carry_5lut_routing_value)+")&",
-  print str(carry_cin_count)+"("+str(carry_cin_value)+")&",
+  print str(lut_count)+"("+str(lut_value)+"),",
+  print str(routing_count)+"("+str(routing_value)+"),",
+  print str(carry_lut_count)+"("+str(carry_lut_value)+"),",
+  print str(carry_lut_routing_count)+"("+str(carry_lut_routing_value)+"),",
+  print str(carry_5lut_count)+"("+str(carry_5lut_value)+"),",
+  print str(carry_5lut_routing_count)+"("+str(carry_5lut_routing_value)+"),",
+  print str(carry_cin_count)+"("+str(carry_cin_value)+"),",
   print str(total_delay)
   
+  return total_delay;  
 
 def main():
 
   rundir = sys.argv[1]
   allsubdir = os.listdir(rundir)
 
+  geomean = 1.0; 
+  n = 0;
+
   for subdir in allsubdir:
+    print subdir + "&",
     vpr_file = rundir + '/' + subdir + '/vpr_stdout.log'
     vprpassflag = 1
+    if not path.exists(vpr_file):
+      print "Increase channel width manually."
+      continue;
     with open(vpr_file) as vprout:
       for line in vprout:
         if 'Circuit is unroutable' in line:
           #print line
           vprpassflag = 0
     if vprpassflag is 1: 
-      print subdir + "&",
       report = rundir + '/' + subdir + '/report_timing.setup.rpt'
       if path.exists(report):
-        parse_file (report);
+        geomean *= parse_file (report);
+        n = n+1;
       else:
         print "Did not place and route correctly."
     else:
-      print subdir,
       print 'cannot route.'
+
+  print str(geomean**(1/float(n)))+'\n';
 
 if __name__ == "__main__":
     main()
