@@ -55,20 +55,24 @@ int main (int argc, char *argv[]){
   carry_lut_mapping_params mapping_params;
 
   // Set carry LUT mapping parameters
+  if (argc > 2 && argv[2] == std::string("xilinx"))
+    mapping_params.xilinx_arch = true;
   if (argc > 3 && argv[3] == std::string("delay"))
     mapping_params.delay = true;
-  if (argc > 4 && argv[4] == std::string("xilinx"))
-    mapping_params.xilinx_arch = true;
-  if (argc > 2 && argv[2] == std::string("baseline")) {
+  if (argc > 4 && argv[4] == std::string("baseline")) {
     mapping_params.carry_mapping = false;
     outputName = getFileName(argv[1]);
   } else {
     mapping_params.carry_mapping = true;
     outputName = getFileName(argv[1]) + "_carry";
     if (argc > 5)
-      mapping_params.max_rounds_carry = std::stoi(argv[5]); 
+      mapping_params.length= std::stoi(argv[5]); 
     if (argc > 6)
-      mapping_params.cost = std::stoi(argv[6]);
+      mapping_params.num_crit_path = std::stoi(argv[6]);
+    if (argc > 7 && argv[7] == std::string("direct"))
+      mapping_params.direct = true;
+    else 
+      mapping_params.direct = false;
   }
 
   mapping_view <mig_network, true> carry_mapped_mig { mig };
@@ -105,6 +109,7 @@ int main (int argc, char *argv[]){
   std::cout << mig.num_gates() << "," << depth_mig.depth();
   //std::cout << ",=" << klut_carry.num_gates() << "+" << klut_carry.num_carry() << "/2," << float(depth_klut_carry.depth()/LUT_DELAY);
   std::cout << "," << klut_carry.num_gates() + klut_carry.num_carry() - klut_carry.num_carry_LUT(); 
+  std::cout << "," << klut_carry.num_gates();
   std::cout << "," << klut_carry.num_carry();
   std::cout << "," << klut_carry.num_carry_LUT() << "," << float(depth_klut_carry.depth()/LUT_DELAY);
   std::cout << "\n";
