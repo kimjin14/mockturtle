@@ -120,6 +120,8 @@ def parse_file(file_name):
   print str(carry_5lut_count)+"("+str(carry_5lut_value)+"),",
   print str(carry_5lut_routing_count)+"("+str(carry_5lut_routing_value)+"),",
   print str(carry_cin_count)+"("+str(carry_cin_value)+"),",
+  print str(lut_value + carry_lut_value + carry_5lut_value + carry_cin_value)+",",
+  print str(routing_value + carry_lut_routing_value + carry_5lut_routing_value)+",",
   print str(total_delay)
   
   return total_delay;  
@@ -154,7 +156,7 @@ def main():
     else:
       print 'cannot route.'
 
-  print str(geomean**(1/float(n)))+'\n';
+  print 'geomean '+str(n)+','+str(geomean**(1/float(n)))+'\n';
 
 if __name__ == "__main__":
     main()
