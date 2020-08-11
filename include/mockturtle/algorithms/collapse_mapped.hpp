@@ -183,10 +183,10 @@ public:
         // Instead of flipping function in case of inverted output (only when necessary)
         // create a not since MIG node cannot invert truth table
         if (node_driver_type[n] == driver_type::neg) { 
-          std::cout << n << " is neg - creates a not\n";
+          //std::cout << n << " is neg - creates a not\n";
           node_to_signal[n] = dest.create_not( node_to_signal[n] );
         } else if (node_driver_type[n] == driver_type::mixed) {
-          std::cout << n << " is mixed - creates a not\n";
+          //std::cout << n << " is mixed - creates a not\n";
           opposites[n] = dest.create_not( node_to_signal[n] );
         }
       } else {
@@ -208,7 +208,7 @@ public:
           break;
         }
       }
-      std::cout << n << " -> " << node_to_signal[n] << "(" << opposites[n] << ")\n";
+      //std::cout << n << " -> " << node_to_signal[n] << "(" << opposites[n] << ")\n";
 
     } );
 
