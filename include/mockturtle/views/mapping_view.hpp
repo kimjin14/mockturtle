@@ -264,12 +264,12 @@ public:
     _mapping_storage->carry_lut_mapped[this->node_to_index( carry_LUTb_index  )] = true;
     _mapping_storage->carry_lut_mapping_complemented[this->node_to_index( carry_LUTa_index  )] = carry_LUTa_complemented;
     _mapping_storage->carry_lut_mapping_complemented[this->node_to_index( carry_LUTb_index  )] = carry_LUTb_complemented;
-    std::cout << "carry node " << this->node_to_index( n ) << ": ";
+    /*std::cout << "carry node " << this->node_to_index( n ) << ": ";
     std::cout << _mapping_storage->carry_lut_mapped[this->node_to_index( carry_LUTa_index)] << " ";
     std::cout << _mapping_storage->carry_lut_mapped[this->node_to_index( carry_LUTb_index)] << " ";
     std::cout << _mapping_storage->carry_lut_mapping_complemented[this->node_to_index( carry_LUTa_index)] << " ";
     std::cout << _mapping_storage->carry_lut_mapping_complemented[this->node_to_index( carry_LUTb_index)] << " ";
-    std::cout << "\n";
+    std::cout << "\n";*/
     _mapping_storage->carry_lut_mapping_size+=2;
   }
 

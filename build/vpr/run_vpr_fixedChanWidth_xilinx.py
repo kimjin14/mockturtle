@@ -27,13 +27,14 @@ runDir="/home/kimjin14/work/mapping/mig_mapping/mockturtle/build/vpr/"
 outputDir="/home/kimjin14/work/mapping/mig_mapping/mockturtle/build/vpr/output"
 saveDir="/home/kimjin14/work/mapping/mig_mapping/mockturtle/build/vpr/output"
 
-xmlFile = "arch/Xilinx_style_arch.xml"
+xmlFile = "arch/Xilinx_style_arch_ecin.xml"
 vprOptions = "--timing_report_detail aggregated --route_chan_width"
 
 # Get directory of what you want to run
 blifDir=blifDir+sys.argv[1]+"/"
 
-seed_list={1, 2, 5}
+#seed_list={1, 2, 5}
+seed_list={1, 5}
 
 for seed in seed_list:
   # Make run directory for VPR

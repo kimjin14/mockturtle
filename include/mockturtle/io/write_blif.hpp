@@ -203,6 +203,18 @@ void write_blif( Ntk const& ntk, std::ostream& os, bool carry_mapping, bool xili
       // Last literal is the carry
       // Check each cube last bit for - or 0 
       // UPPER LUT 
+      uint32_t check_input[topo_ntk.fanin_size(n)-1] = {0};
+      for ( const auto& cube : list_of_cubes ) {
+        for ( uint32_t i = 0; i < topo_ntk.fanin_size(n) - 1; i++) {
+          if ( cube.get_mask(i) ) check_input[i]++;
+        }
+      }
+      /*std::cout << "output* " << n << ":";
+      for ( uint32_t i = 0; i < topo_ntk.fanin_size(n) - 1; i++){
+        if (check_input[i] == 0) std::cout << i << " ";
+      }
+      std::cout << "\n";
+      */
       for ( const auto& cube : list_of_cubes ) {
         if(!cube.get_mask(topo_ntk.fanin_size(n) - 1)) { 
           if (cube.num_literals() == 0) should_be_constant_1 ++;
@@ -217,14 +229,17 @@ void write_blif( Ntk const& ntk, std::ostream& os, bool carry_mapping, bool xili
       if (should_be_constant_0 > 0 && should_be_constant_1 == 0) {
         count = 0;
         topo_ntk.foreach_fanin( n, [&]( auto const& c ) {
-          if (count != topo_ntk.fanin_size(n)-1) // don't include carry-in
+          //if (count != topo_ntk.fanin_size(n)-1) // don't include carry-in 
+          if (count != topo_ntk.fanin_size(n)-1 && check_input[count]!=0) // don't include carry-in and unused inputs
             os << fmt::format( "n{} ", topo_ntk.node_to_index( c ) );
           count++;
         });
         os << fmt::format( " n{}\n", a );
         for ( const auto& cube : list_of_cubes ) {
           if (!cube.get_mask(topo_ntk.fanin_size(n) - 1) || cube.get_bit(topo_ntk.fanin_size(n) - 1) == 0) {
-            cube.print( topo_ntk.fanin_size( n )-1, os );
+            for (uint32_t i = 0; i < topo_ntk.fanin_size(n) - 1; i++) 
+              if (check_input[i] != 0) os << ( cube.get_mask(i)? (cube.get_bit(i) ? '1':'0'):'-');
+            //cube.print( topo_ntk.fanin_size( n )-1, os );
             os << " 1\n";
           }
         }
@@ -252,14 +267,17 @@ void write_blif( Ntk const& ntk, std::ostream& os, bool carry_mapping, bool xili
       if (should_be_constant_0 > 0 && should_be_constant_1 == 0) {
         count = 0;
         topo_ntk.foreach_fanin( n, [&]( auto const& c ) {
-          if (count != topo_ntk.fanin_size(n)-1) // don't include carry-in
+          //if (count != topo_ntk.fanin_size(n)-1) // don't include carry-in
+          if (count != topo_ntk.fanin_size(n)-1 && check_input[count]!=0) // don't include carry-in and unused inputs
             os << fmt::format( "n{} ", topo_ntk.node_to_index( c ) );
          count++;
         });
         os << fmt::format( " n{}\n", b );
         for ( const auto& cube : list_of_cubes ) {
           if (!cube.get_mask(topo_ntk.fanin_size(n) - 1) || cube.get_bit(topo_ntk.fanin_size(n) - 1) == 1) {
-            cube.print( topo_ntk.fanin_size( n )-1, os );
+            for (uint32_t i = 0; i < topo_ntk.fanin_size(n) - 1; i++) 
+              if (check_input[i] != 0) os << ( cube.get_mask(i)? (cube.get_bit(i) ? '1':'0'):'-');
+            //cube.print( topo_ntk.fanin_size( n )-1, os );
             os << " 1\n";
           }
         }
@@ -299,6 +317,7 @@ void write_blif( Ntk const& ntk, std::ostream& os, bool carry_mapping, bool xili
   // we have a list of carry chains
   uint32_t clb_input_count = 0;
   uint32_t current_alm = 0;
+  uint32_t wasted_alm = 0;
 
   for (auto carry_chain: carry_chains) {
     clb_input_count = 0;
@@ -316,44 +335,64 @@ void write_blif( Ntk const& ntk, std::ostream& os, bool carry_mapping, bool xili
           os << "\n";
         }
 
-
+        uint32_t ind_in = 0;
+        auto const func = topo_ntk.node_function( n );
+        auto list_of_cubes = isop(func);
+        bool dependent_input[topo_ntk.fanin_size(n)-1] = {false};
+        for ( const auto& cube : list_of_cubes ) {
+          for ( uint32_t i = 0; i < topo_ntk.fanin_size(n) - 1; i++) {
+            if ( cube.get_mask(i) ) dependent_input[i] = true;
+          }
+        }
+       
+        for ( uint32_t i = 0; i < topo_ntk.fanin_size(n) - 1; i++){
+          if (!dependent_input[i]) {
+            ind_in++;
+          }
+        }
+        
         // First node determins whether this is the beginning of the CLB
         // Carry in cannot be reached from external routing
         // If it can fit into one of the inputs, we add it but
         // if it cannot fit (fanout > 5), we create a whole new structure for it
-        if (first_node && (topo_ntk.fanin_size(n) == 6)) {
+        /*if (first_node && ((topo_ntk.fanin_size(n) - ind_in) == 6)) {
+          wasted_alm++;
           os << (".subckt lut_adder ");
           os << fmt::format( "in{}=n{} ", 0, topo_ntk.node_to_index(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1)));
           os << fmt::format( "in{}=unconn in{}=unconn in{}=unconn in{}=unconn ", 1,2,3,4 );
           os << fmt::format( "cin=unconn cout=c{} sumout=unconn{} out=unconn1{}\n", next_node, next_node, next_node);
           current_alm++;
-        }
+        }*/
 
         // Print the 5 inputs to the lut_adder combo
         // if someone them are not used, connect to "unconn"
         uint32_t input_count = 0;
 
         os << (".subckt lut_adder ");
-        topo_ntk.foreach_fanin( n, [&]( auto const& c ) {
-          if (input_count != topo_ntk.fanin_size(n)-1) {
-            os << fmt::format( "in{}=n{} ", input_count, topo_ntk.node_to_index( c ) );
-            input_count++;
-          }
-        });
 
-        if (first_node && (topo_ntk.fanin_size(n) != 6)) {
+        if ( first_node && ( ( topo_ntk.fanin_size(n) - ind_in) == 6 ) ) {
+          os << fmt::format( "ecin=n{} ", topo_ntk.node_to_index(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1)));
+        } else if (first_node && ((topo_ntk.fanin_size(n) - ind_in) != 6)) {
           os << fmt::format( "in{}=n{} ", input_count, topo_ntk.node_to_index( topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1)) );
           input_count++;
         }
+        uint32_t curr_i = 0;
+        topo_ntk.foreach_fanin( n, [&]( auto const& c ) {
+          if (curr_i != topo_ntk.fanin_size(n)-1 && dependent_input[curr_i] ) {
+            os << fmt::format( "in{}=n{} ", input_count, topo_ntk.node_to_index( c ) );
+            input_count++;
+          }
+          curr_i++;
+        });
 
-        for (; input_count < 5; input_count++)
-          os << fmt::format( "in{}=unconn ", input_count );
+        //for (; input_count < 5; input_count++)
+        //  os << fmt::format( "in{}=unconn ", input_count );
         
         if (first_node) { 
-          if (topo_ntk.fanin_size(n) == 6)
-            os << fmt::format("cin=c{} ", next_node++);
-          else
-            os << fmt::format("cin=unconn ");
+          //if ((topo_ntk.fanin_size(n)-ind_in) == 6)
+          //  os << fmt::format("cin=c{} ", next_node++);
+          //else
+          //  os << fmt::format("cin=unconn ");
           first_node = false;
         } else if (topo_ntk.is_pi(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1))) {
           os << fmt::format("cin=n{} ", topo_ntk.node_to_index(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1) ) );
@@ -362,114 +401,19 @@ void write_blif( Ntk const& ntk, std::ostream& os, bool carry_mapping, bool xili
         }
 
         os << fmt::format("cout=c{} ", topo_ntk.node_to_index( n ) );
-        uint32_t out_node = next_node++;
+        /*uint32_t out_node = next_node++;
         if ( topo_ntk.get_carry_LUTa(n) > 1 ) 
           out_node = topo_ntk.get_carry_LUTa(n);
         else if ( topo_ntk.get_carry_LUTb(n) > 1 )
           out_node = topo_ntk.get_carry_LUTb(n);
       
-        os << fmt::format("out=n{} ", out_node );
+        os << fmt::format("out=n{} ", out_node );*/
         os << fmt::format("sumout=n{}\n", topo_ntk.node_to_index( n ) );
 
         clb_input_count+=topo_ntk.fanin_size(n)-1 ; //-1 for the carryin
         current_alm++;
 
-/*
-        uint32_t a = next_node++;
-        uint32_t b = next_node++;
-        uint32_t cin = topo_ntk.node_to_index(topo_ntk.get_children(n, topo_ntk.fanin_size(n)-1));;
-        uint32_t out = topo_ntk.node_to_index(n);
-
-        if (first_node) {
-          os << (".subckt adder ");
-          os << fmt::format( "a=unconn b=n{} cin=unconn ", cin ); 
-          os << fmt::format( "cout=c{} sumout=n{}\n", next_node, next_node );
-          cin = next_node;
-          next_node++;
-          current_alm++;
-          first_node = false;
-        }
-
-        os << (".subckt adder ");
-        os << fmt::format( "a=n{} b=n{} cin=c{} ", a, b, cin); 
-        os << fmt::format( "cout=c{} sumout=n{}\n", out, out);
-        
-        auto const func = topo_ntk.node_function( n );
-        auto list_of_cubes = isop(func);
-        uint32_t count = 0;
-        uint32_t should_be_constant_0 = 0;
-        uint32_t should_be_constant_1 = 0;
-        // Separate cubes into upper and lower LUT
-        // Last literal is the carry
-        // Check each cube last bit for - or 0 
-        // UPPER LUT 
-        for ( const auto& cube : list_of_cubes ) {
-          if(!cube.get_mask(topo_ntk.fanin_size(n) - 1)) { 
-            if (cube.num_literals() == 0) should_be_constant_1 ++;
-            should_be_constant_0++;
-          } else if (cube.get_bit(topo_ntk.fanin_size(n) - 1) == 0) { 
-            if (cube.num_literals() == 1) should_be_constant_1 ++;
-            should_be_constant_0++;
-          }
-        }
-
-        os << fmt::format( ".names " );
-        if (should_be_constant_0 > 0 && should_be_constant_1 == 0) {
-          count = 0;
-          topo_ntk.foreach_fanin( n, [&]( auto const& c ) {
-            if (count != topo_ntk.fanin_size(n)-1) // don't include carry-in
-              os << fmt::format( "n{} ", topo_ntk.node_to_index( c ) );
-            count++;
-          });
-          os << fmt::format( " n{}\n", a );
-          for ( const auto& cube : list_of_cubes ) {
-            if (!cube.get_mask(topo_ntk.fanin_size(n) - 1) || cube.get_bit(topo_ntk.fanin_size(n) - 1) == 0) {
-              cube.print( topo_ntk.fanin_size( n )-1, os );
-              os << " 1\n";
-            }
-          }
-        } else {
-          if (should_be_constant_1 != 0) os << fmt::format( "n{}\n1\n", a );
-          else os << fmt::format( "n{}\n0\n", a );
-        }
-
-        // Separate cubes into upper and lower LUT
-        // Last literal is the carry
-        // Check each cube last bit for - or 1 
-        // LOWER LUT
-        should_be_constant_0 = 0;
-        should_be_constant_1 = 0;
-        for ( const auto& cube : list_of_cubes ) {
-          if(!cube.get_mask(topo_ntk.fanin_size(n) - 1)) {
-            if (cube.num_literals() == 0) should_be_constant_1 ++;
-            should_be_constant_0++;
-          } else if (cube.get_bit(topo_ntk.fanin_size(n) - 1) == 1) {
-            if (cube.num_literals() == 1) should_be_constant_1 ++;
-            should_be_constant_0++;
-          }
-        }
-        os << fmt::format( ".names " );
-        if (should_be_constant_0 > 0 && should_be_constant_1 == 0) {
-          count = 0;
-          topo_ntk.foreach_fanin( n, [&]( auto const& c ) {
-            if (count != topo_ntk.fanin_size(n)-1) // don't include carry-in
-              os << fmt::format( "n{} ", topo_ntk.node_to_index( c ) );
-            count++;
-          });
-          os << fmt::format( " n{}\n", b );
-          for ( const auto& cube : list_of_cubes ) {
-            if (!cube.get_mask(topo_ntk.fanin_size(n) - 1) || cube.get_bit(topo_ntk.fanin_size(n) - 1) == 1) {
-              cube.print( topo_ntk.fanin_size( n )-1, os );
-              os << " 1\n";
-            }
-          }
-        } else {
-          if (should_be_constant_1 != 0) os << fmt::format( "n{}\n1\n", b );
-          else os << fmt::format( "n{}\n0\n", b );
-        }
-        current_alm++;
-*/
-      } else {
+      } else { // INTEL STYLE FPGA
     
         // Count the number of inputs to the 20 ALMs
         // Every 20 ALMs (1 CLB), reset input count to 0 
@@ -558,9 +502,11 @@ void write_blif( Ntk const& ntk, std::ostream& os, bool carry_mapping, bool xili
   }
   os << ".end\n";
 
+  os << "# Wasted LUTs " << wasted_alm << "\n";
+
   if (carry_mapping) {
     os << "\n.model lut_adder\n";
-    os << ".inputs in0 in1 in2 in3 in4 cin\n";
+    os << ".inputs ecin in0 in1 in2 in3 in4 cin\n";
     os << ".outputs sumout cout out\n";
     os << ".blackbox\n";
     os << ".end\n";
