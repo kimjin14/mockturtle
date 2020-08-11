@@ -51,6 +51,7 @@ struct cut_enumeration_mf_cut
   uint32_t delay{0};
   float flow{0};
   float cost{0};
+  uint32_t carry{0};
 };
 
 template<bool ComputeTruth>
@@ -66,24 +67,60 @@ bool operator<( cut_type<ComputeTruth, cut_enumeration_mf_cut> const& c1, cut_ty
   if ( c1->data.delay > c2->data.delay )
     return false;
   return c1.size() < c2.size();
+  //if ( c1->data.carry == 0 && c2->data.carry > 0) {
 }
+
+template<typename Cut, typename Ntk>
+uint32_t count_path_to_node ( Cut& cut, Ntk const& ntk, uint32_t index, uint32_t source_index,  uint32_t dest_index) {
+
+  auto const& n = ntk.index_to_node(source_index);
+
+  if (source_index == dest_index) {
+    return 1;
+  }
+
+  for ( auto leaf : cut )
+    if (source_index == leaf) return 0;
+
+  uint32_t total = 0;
+
+  ntk.foreach_fanin( n, [&] ( auto const& f ){
+    auto const leaf = ntk.get_node(f);
+    auto const leaf_index = ntk.node_to_index(leaf);
+    if (!ntk.is_constant(leaf))
+      total += count_path_to_node(cut, ntk, index, leaf_index, dest_index);
+  });
+  return total;
+}
+
 
 template<>
 struct cut_enumeration_update_cut<cut_enumeration_mf_cut>
 {
+
   template<typename Cut, typename NetworkCuts, typename Ntk>
   static void apply( Cut& cut, NetworkCuts const& cuts, Ntk const& ntk, node<Ntk> const& n )
   {
     uint32_t delay{0};
+    //uint32_t single_path{0};
+    //uint32_t crit_path{0};
     float flow = cut->data.cost = cut.size() < 2 ? 0.0f : 1.0f;
+
+    //auto index = ntk.node_to_index(n);
 
     for ( auto leaf : cut )
     {
       const auto& best_leaf_cut = cuts.cuts( leaf )[0];
       delay = std::max( delay, best_leaf_cut->data.delay );
+      //if (delay == best_leaf_cut->data.delay) {
+        //crit_path++;
+        //if (count_path_to_node<Cut, Ntk>( cut, ntk, index, index, leaf ) == 1)
+        //  single_path++;
+      //}
       flow += best_leaf_cut->data.flow;
+       
     }
-
+    //cut->data.carry = crit_path - single_path;
     cut->data.delay = 1 + delay;
     cut->data.flow = flow / ntk.fanout_size( n );
   }
