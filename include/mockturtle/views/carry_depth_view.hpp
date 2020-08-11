@@ -232,7 +232,6 @@ private:
       {
         clevel+=LUT_DELAY;
       }
-     
       if (this->is_carry(n) && (this->get_carry_driver(n) == this->get_node(f))) {
         clevel += CARRY_DELAY;
       } else if (this->is_carry(n)) {
@@ -240,7 +239,6 @@ private:
       } else {
         clevel += LUT_DELAY;
       }
-
       if (clevel > level) {
         level = clevel;
         slowest_node = this->get_node(f);
@@ -269,7 +267,7 @@ private:
       _depth = std::max( _depth, clevel );
     } );
     //print_depth_of_all_nodes();
-    //print_critical_path();
+    print_critical_path();
     
   }
 
@@ -289,24 +287,33 @@ private:
     uint32_t worst_delay = 0;
     auto worst_node = n;
     uint32_t critical_index = 0;
+    uint32_t this_delay = 0;
 
     this->foreach_fanin( n, [&]( auto const& f ) {
         const auto leaf = this->node_to_index (this->get_node(f));
-        if (_levels[leaf] > worst_delay) {
+        
+        if (this->is_carry(n) && (this->get_carry_driver(n) == this->get_node(f))) {
+          this_delay = _levels[leaf] + CARRY_DELAY;
+        } else if (this->is_carry(n)) {
+          this_delay = _levels[leaf] + LUT_ADDER_DELAY;
+        } else {
+          this_delay = _levels[leaf] + LUT_DELAY;
+        }
+        if (this_delay > worst_delay) {
           critical_index = leaf;
-          worst_delay = _levels[leaf];
+          worst_delay = this_delay;
           worst_node = this->get_node(f);
         }
     } );
 
     if (this->is_carry(n) && (this->get_carry_driver(n) == worst_node)) {
-      std::cout << " -> " << index << "*(" << _levels[index]/LUT_DELAY << ")\n";
+      std::cout << " -> " << index << "*(" << _levels[index] << ")\n";
       carry_count++;
     } else if (this->is_carry(n)) {
-      std::cout << " -> " << index << "*(" << _levels[index]/LUT_DELAY << ")\n";
+      std::cout << " -> " << index << "*(" << _levels[index] << ")\n";
       lut_carry_count++;
     } else {
-      std::cout << " -> " << index << "(" << _levels[index]/LUT_DELAY << ")\n";
+      std::cout << " -> " << index << "(" << _levels[index] << ")\n";
       lut_count++;
     }
 
