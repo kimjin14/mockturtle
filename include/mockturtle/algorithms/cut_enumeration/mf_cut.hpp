@@ -60,23 +60,26 @@ bool operator<( cut_type<ComputeTruth, cut_enumeration_mf_cut> const& c1, cut_ty
 {
   constexpr auto eps{0.005f};
 
-  uint32_t c1_cost = c1->data.n_crit - c1->data.n_mappable_crit;
-  uint32_t c2_cost = c2->data.n_crit - c2->data.n_mappable_crit;
+  //uint32_t c1_cost = c1->data.n_crit - c1->data.n_mappable_crit;
+  //uint32_t c2_cost = c2->data.n_crit - c2->data.n_mappable_crit;
 
-  //if ( c1->data.n_crit <= 1 && c1_cost == 0 && c2_cost > 0)
+  //if ( c1->data.n_crit <= 2 && c1_cost == 0 && c2_cost > 0)
   //  return true; 
-  //if ( c2->data.n_crit <= 1 && c2_cost == 0 && c1_cost > 0)
+  //if ( c2->data.n_crit <= 2 && c2_cost == 0 && c1_cost > 0)
   //  return false; 
   if ( c1->data.flow < c2->data.flow - eps )
     return true;
   if ( c1->data.flow > c2->data.flow + eps )
     return false;
+  //if ( c1_cost == 0 && c2_cost > 0)
+  //  return true; 
+  //if ( c2_cost == 0 && c1_cost > 0)
+  //  return false; 
   if ( c1->data.delay < c2->data.delay )
     return true;
   if ( c1->data.delay > c2->data.delay )
     return false;
   return c1.size() < c2.size();
-  //if ( c1->data.carry == 0 && c2->data.carry > 0) {
 }
 
 template<typename Cut, typename Ntk>
