@@ -176,7 +176,7 @@ public:
 
     while ( iteration < ps.rounds )
     {
-      compute_mapping<false>(ps.delay);
+      compute_mapping<false>(ps.delay, !ps.carry_mapping);
 
       //print_state();
       //map_carry_nodes(false);
@@ -186,7 +186,7 @@ public:
 
     while ( iteration < ps.rounds + ps.rounds_ela)
     {
-      compute_mapping<true>(ps.delay);
+      compute_mapping<true>(ps.delay, !ps.carry_mapping);
 
       //print_state();
       //map_carry_nodes(false);
@@ -196,8 +196,11 @@ public:
 
     if (ps.carry_mapping) {
       set_critical_node();
-
       update_delay();
+
+      //count_mappable_nodes (1,2);
+      //count_mappable_nodes (2,2);
+
       uint32_t baseline_delay = delay;
       uint32_t best_delay = delay;
       uint32_t best_area = 0;
@@ -205,38 +208,45 @@ public:
       uint32_t best_mig_len = 2;
       uint32_t best_max_mig_len = 20;
       uint32_t best_n_crit = 1;
-
-      for (uint32_t n_crit = 1; n_crit < 3; n_crit++) { // 1 2 3 
-        for (uint32_t mig_len = 2; mig_len <= 10; mig_len+=4) { // 2 6 10 
-          count_mappable_nodes (best_n_crit,best_mig_len);
-          for (uint32_t lut_len = 10; lut_len > 1; lut_len/=2) { // 10 5 2
-            for (uint32_t max_mig_len = 20; max_mig_len <= 60; max_mig_len+=20) {// 20 40 60
-              std::cout << "Trying config " << max_mig_len << " " << n_crit << " " << mig_len << " " << lut_len << "\n"; 
-              map_carry_nodes(false, lut_len, n_crit, mig_len, max_mig_len);
-              if ((delay/LUT_DELAY < best_delay/LUT_DELAY) || (delay/LUT_DELAY == best_delay/LUT_DELAY && area < best_area)) {
-                best_delay = delay;
-                best_area = area;
-                best_lut_len = lut_len;
-                best_mig_len = mig_len;
-                best_max_mig_len = max_mig_len;
-                best_n_crit = n_crit;
-              } 
-              print_state();
-              clear_carry_mapping();
-            }
+      uint32_t best_offset = 0;
+      uint32_t best_carry_paths = 1000;
+      uint32_t offset_setting [10] = {0, LUT_DELAY*2, LUT_DELAY*4, LUT_DELAY*6, LUT_DELAY*8, LUT_DELAY*10, delay/4, delay/2};
+      for (uint32_t offset_i = 0; offset_i<6 && offset_setting[offset_i] < delay; offset_i++) {
+        uint32_t offset = offset_setting[offset_i];
+        for (uint32_t n_crit = 1; n_crit < 3; n_crit++) { // 1 2 3 
+          for (uint32_t mig_len = 2; mig_len <= 8; mig_len*=2) { // 2 6 10 
+            for (uint32_t lut_len = 5; lut_len >= 2; lut_len/=2) { // 10 5 2
+              uint32_t max_mig_len = 20;
+                std::cout << "Trying config " << offset << " " << n_crit << " " << mig_len << " " << lut_len << " " << max_mig_len << "\n";   
+                map_carry_nodes(false, offset, lut_len, n_crit, mig_len, max_mig_len);
+                //if ((delay < best_delay) || (delay == best_delay && area-2 < best_area) || (delay == best_delay && area < best_area+2 && carry_paths.size() < best_carry_paths)) {
+                if ((delay < best_delay) || (delay == best_delay && area < best_area)) {// || (delay == best_delay && area == best_area && carry_paths.size() < best_carry_paths)) {
+                  std::cout << "-> " << delay << "\n";
+                  best_delay = delay;
+                  best_area = area;
+                  best_lut_len = lut_len;
+                  best_mig_len = mig_len;
+                  best_max_mig_len = max_mig_len;
+                  best_n_crit = n_crit;
+                  best_offset = offset;
+                  best_carry_paths = carry_paths.size();
+                  //print_critical_path();
+                } 
+                print_state();
+                clear_carry_mapping();
+              }
           }
         }
       }
       if (best_delay > (int)(0.95*baseline_delay)) std::cout << "selected baseline " << best_delay << " " << baseline_delay << "\n";
       else {
-        std::cout << "selected " << best_n_crit << " " << best_mig_len << " " << best_lut_len << " " << best_max_mig_len << "\n";   
-        map_carry_nodes(true, best_lut_len, best_n_crit, best_mig_len, best_max_mig_len);
+        std::cout << "selected " << best_offset << " " << best_n_crit << " " << best_mig_len << " " << best_lut_len << " " << best_max_mig_len << "\n";   
+        map_carry_nodes(true, best_offset, best_lut_len, best_n_crit, best_mig_len, best_max_mig_len);
       }
       update_delay();
       update_area();
       
-
-      //map_all_carry_nodes (true, best_lut_len, best_n_crit, best_mig_len);
+      //map_all_carry_nodes (true, 5/*best_lut_len*/, 7/*best_n_crit*/, 100/*best_mig_len*/);
 
       std::cout << "There were " << carry_paths.size() << " paths placed.\n";
       print_critical_path();
@@ -311,7 +321,6 @@ private:
   }
 
   uint32_t length_to_node (  uint32_t index, uint32_t source_index,  uint32_t dest_index) {
-    //std::cout << "source_index " << source_index << "\n";
 
     auto const& n = ntk.index_to_node(source_index);
 
@@ -334,11 +343,13 @@ private:
       auto const leaf_index = ntk.node_to_index(leaf);
       //if (!is_a_carry_node(leaf) && !ntk.is_constant(leaf)) {
       if (!ntk.is_constant(leaf)) {
+        //std::cout << source_index << " " << leaf_index << " " << dest_index << "\n";
         total = length_to_node(index, leaf_index, dest_index);
-        if (total > 0) break; 
+        if (total > 0) break;
       }
     }
-    return total+1;
+    if ( total > 0 ) return total+1;
+    return 0;
 
 
   }
@@ -465,7 +476,7 @@ private:
         found = add_cut_to_carry(path_for_carry_chain, index, leaf_index, dest_index);
       if (found) {
         //std::cout << cuts.cuts(index)[0] << "\n";
-        add_dependent_cut_to_carry(index, source_index, source_index, leaf_index);
+      add_dependent_cut_to_carry(index, source_index, source_index, leaf_index);
         /*for (auto cut_leaf: cuts.cuts(index)[0]) {
           if (cut_leaf != dest_index) {
             carry_cut_list[source_index].push_back(cut_leaf);
@@ -487,7 +498,9 @@ private:
         for (auto inlist: carry_cut_list[source_index]) {
           if (curr_index == inlist) in_list = true;
         }
-        if(!in_list && curr_index) carry_cut_list[source_index].push_back(curr_index);
+        if(!in_list && curr_index) {
+          carry_cut_list[source_index].push_back(curr_index);
+        }
         return;
       }
     }
@@ -598,12 +611,8 @@ private:
 
     counter++;   
 
-    if ( mig_length >= max_mig_len ) {
-      path_for_carry_chain.push_back(index);
-      return true;
-    }
-  
-    // If first LUT, add any input 
+   if (mig_len>max_mig_len  ) return true;
+
     if ( delays[index] == 20 ) {
       pi_count++;
       if (ps.verbose && ps.verbosity > 3) std::cout << "\t\t\tPI " << index << " " << length << "\n";
@@ -639,10 +648,12 @@ private:
       chain_len_count++;
       return false;
     }
+   
+     
     for ( auto leaf: cut_list ) { 
       if (((delays[index] - LUT_DELAY) == delays[leaf] || (delays[index] - CARRY_DELAY) == delays[leaf] || (delays[index] - LUT_ADDER_DELAY) == delays[leaf]) && path_for_carry_chain.empty()) {
         crit_child_node = leaf;
-      
+
         // Check 1: only one path to the leaf node  
         uint32_t num_path = count_path_to_node (index, index, crit_child_node, 0);
         bool mult_path_through_lut = num_path != 1;
@@ -650,11 +661,36 @@ private:
         bool on_carry = !no_carry_on_path(index, index, crit_child_node);
         // Check 3: mig length within LUT
         uint32_t len_path = length_to_node (index, index, crit_child_node);
-        bool path_too_long = len_path >= mig_len; 
+        bool path_too_long = len_path > mig_len; 
 
+        //bool driving_too_many = num_critical_map_refs[leaf] > 5;
+        bool driving_too_many = false;
+
+        bool direct_input = !on_carry && check_direct_input (crit_child_node, index);
+        bool shorter_input = !on_carry && check_shorter_path (crit_child_node, index, index);
         // Required for legal mapping
-        if ( mult_path_through_lut || on_carry || path_too_long ) {
-          if (ps.verbose && ps.verbosity > 3) std::cout << "\t\t\tCANNOT BE PLACED " << crit_child_node << " " << num_path << " " << on_carry << " " << path_too_long << "\n";
+        if ( direct_input && path_too_long ) {
+          //print_lut (index, index);
+          if (ps.verbose && ps.verbosity > 3) std::cout << "\t\t\tPATH NOT TOO LONG " << crit_child_node << " " \
+                                              <<  on_carry << " " << direct_input << " " << num_path << " " \
+                                              << len_path << " " << mig_len << "\n";
+        }
+        if ( direct_input && mult_path_through_lut ) {
+          //print_lut (index, index);
+          if (ps.verbose && ps.verbosity > 3) std::cout << "\t\t\tSINGLE PATH " << crit_child_node << " " <<  on_carry << " " << direct_input << " " << num_path << " " << len_path << " " << mig_len << "\n";
+        }
+        if ( (len_path >= 4 || mult_path_through_lut) && shorter_input) {
+          //print_lut (index, index);
+          if (ps.verbose && ps.verbosity > 3) std::cout << "\t\t\tSHORTER PATH " << crit_child_node << " " <<  on_carry << " " << direct_input << " " << num_path << " " << len_path << " " << mig_len << "\n";
+        }
+        if ( on_carry || driving_too_many || (!direct_input && (mult_path_through_lut || path_too_long)) ) {
+          //if ( !on_carry && check_direct_input (crit_child_node, index)) {
+          //  std::cout << "\t\t\tSHOULD BE PLACED " << crit_child_node << " " <<  on_carry << " " << num_path << " " << len_path << " " << mig_len << "\n";
+          //}
+          //print_lut(index,index);
+          if (ps.verbose && ps.verbosity > 3) std::cout << "\t\t\tCANNOT BE PLACED " << crit_child_node << " " \
+                                      <<  on_carry << " " << crit_child_count << " " << direct_input << " " \
+                                      << shorter_input << " " << num_path << " " << len_path << " " << mig_len << "\n";
           if ( mult_path_through_lut ) mult_path_count++;  
           if ( path_too_long ) mig_len_count++;  
           if (length >= lut_chain_len) {
@@ -662,21 +698,30 @@ private:
             return true;
           } 
           chain_len_count++;
-          if (find_easiest_LUT(counter, path_for_carry_chain, crit_child_node, 0, 0,\
+          find_easiest_LUT(counter, path_for_carry_chain, crit_child_node, 0, 0,\
               pi_count, chain_len_count, crit_count, mig_len_count, mult_path_count,
-              lut_chain_len, num_crit_lut_in, mig_len, max_mig_len)) {
-            return false;
-          } else continue; 
+              lut_chain_len, num_crit_lut_in, mig_len, max_mig_len);
+          return false;
         }
-
         if (find_easiest_LUT(counter, path_for_carry_chain, crit_child_node, length+1, mig_length+mig_len,\
             pi_count, chain_len_count, crit_count, mig_len_count, mult_path_count,
             lut_chain_len, num_crit_lut_in, mig_len, max_mig_len)) {
-          if (!add_path_within_LUT_to_carry(path_for_carry_chain, index, index, crit_child_node) ){
-            std::cout << "DID NOT PLACE ANYTHING WHY?\n";
-            assert(0);
+          if (direct_input && (mult_path_through_lut || path_too_long)) {
+            std::cout << "\t\t\tSPECIAL CASE\n";
+            path_for_carry_chain.push_back(index);
+            /*for (auto icut: cuts.cuts(index)[0]) {
+              if (icut != crit_child_node) {
+                carry_cut_list[index].push_back(icut);
+              }
+            } 
+            carry_cut_list[index].push_back(crit_child_node);*/
+          } else {
+            if (!add_path_within_LUT_to_carry(path_for_carry_chain, index, index, crit_child_node) ){
+              std::cout << "DID NOT PLACE ANYTHING WHY?\n";
+              assert(0);
+            }
+            add_cut_to_carry(path_for_carry_chain, index, index, crit_child_node);  
           }
-          add_cut_to_carry(path_for_carry_chain, index, index, crit_child_node);  
           return true;
         } 
       }
@@ -686,7 +731,26 @@ private:
     return false;
   } 
 
-  void map_carry_nodes (bool set, uint32_t lut_chain_len, uint32_t num_crit_lut_in, uint32_t mig_len, uint32_t max_mig_len) {
+  void print_lut (uint32_t index, uint32_t curr_index) {
+
+
+    for (auto leaf: cuts.cuts(index)[0]) {
+      if (curr_index == leaf) return;
+    }
+
+    for (uint32_t i = 0; i < ntk.fanin_size(curr_index); i++) {
+      auto leaf = ntk.get_children(curr_index, i); 
+      if (ntk.is_complemented_children(curr_index,i))
+        std::cout << curr_index << "->*" << leaf << "\n";    
+      else
+        std::cout << curr_index << "->" << leaf << "\n";    
+      if (ntk.is_constant(leaf)) continue;
+      print_lut (index, leaf);
+    }
+    return;
+  }
+
+  void map_carry_nodes (bool set, uint32_t offset, uint32_t lut_chain_len, uint32_t num_crit_lut_in, uint32_t mig_len, uint32_t max_mig_len) {
 
     uint32_t pi_count = 0;
     uint32_t chain_len_count = 0;
@@ -697,9 +761,9 @@ private:
 
     ntk.clear_visited();
 
+    // Search for POs with delays that are within 2 LUT delay of critical delay
     //for (uint32_t delay_offset = 0; delay_offset <= 2*LUT_DELAY && counter < MAX_SEARCH;){
-    //for (uint32_t delay_offset = 0; delay_offset <= (delay - 2*LUT_DELAY) && counter < MAX_SEARCH;){
-    for (uint32_t delay_offset = 0; delay_offset <= (delay/2)+1&& counter < MAX_SEARCH;){
+    for (uint32_t delay_offset = 0; delay_offset <=  offset&& counter < MAX_SEARCH;){
       if (ps.verbose && ps.verbosity > 3) std::cout << "\tMapping " << delay << " to " << delay-delay_offset << "\n";
       bool mapped_something = false;
       std::vector<node<Ntk>> path_for_carry_chain;
@@ -713,22 +777,25 @@ private:
           if (ps.verbose && ps.verbosity > 3) 
             std::cout << "\t\tPO " << index << "(" << delays[index] << "): " << counter << "\n";
 
-          find_easiest_LUT(counter, path_for_carry_chain, index, 0, 0, \
-            pi_count, chain_len_count, crit_count, mig_len_count, mult_path_count, \
-            lut_chain_len, num_crit_lut_in, mig_len, max_mig_len);
+          //for(uint32_t i = 0; i < ntk.fanin_size(index); i++) {
+          //  auto const child = ntk.get_children(node,i);
+            find_easiest_LUT(counter, path_for_carry_chain, index/*ntk.node_to_index(child)*/, 0, 0, \
+              pi_count, chain_len_count, crit_count, mig_len_count, mult_path_count, \
+              lut_chain_len, num_crit_lut_in, mig_len, max_mig_len);
 
-          if (path_for_carry_chain.empty() || counter > MAX_SEARCH) return;
-          mapped_something = true;
-          carry_paths.push_back(path_for_carry_chain);
-          for (uint32_t j = 1; j < path_for_carry_chain.size(); j++) {
-            carry_nodes[path_for_carry_chain[j]] += 1;
-            carry_driver_nodes[path_for_carry_chain[j]] = path_for_carry_chain[j-1];
-          }
-          path_for_carry_chain.clear();
-          ntk.clear_visited();
-          update_delay();
-          update_area(); 
-    
+            if (path_for_carry_chain.empty() || counter > MAX_SEARCH) return;// continue;
+            mapped_something = true;
+            carry_paths.push_back(path_for_carry_chain);
+            for (uint32_t j = 1; j < path_for_carry_chain.size(); j++) {
+              carry_nodes[path_for_carry_chain[j]] += 1;
+              carry_driver_nodes[path_for_carry_chain[j]] = path_for_carry_chain[j-1];
+            }
+            path_for_carry_chain.clear();
+            ntk.clear_visited();
+            update_delay();
+            update_area(); 
+          //}
+          //if (!mapped_something || counter > MAX_SEARCH) return;
           if (ps.verbose && ps.verbosity > 3) 
             std::cout << "\tMapped one chain, updated delay," << delay << "," << area << "\n\n";
         }
@@ -754,7 +821,10 @@ private:
       remove_inverter();
       for (auto carry_path: carry_paths) {
         for (int i = carry_path.size()-1; i >= 1; i--) {
-          set_tt_easy_node(carry_path[i-1], carry_path[i]);
+          if (carry_cut_list[carry_path[i]].empty()) set_direct_input(carry_path[i-1], carry_path[i]);
+          //if (check_direct_input(carry_path[i-1], carry_path[i])) set_direct_input(carry_path[i-1], carry_path[i]);
+          else
+            set_tt_easy_node(carry_path[i-1], carry_path[i]);
         }
       }
       check_inverter();
@@ -789,13 +859,14 @@ private:
     uint32_t worst_delay_index = 0;
     uint32_t crit_child_count = 0;
     uint32_t crit_child_index = 0;
-    uint32_t crit_cost = std::numeric_limits<uint32_t>::max();
+    uint32_t crit_cost = 0;
 
-    //std::cout << "Considering ";
+    std::cout << "Considering";
     if (is_a_carry_node(index)) {
+      std::cout << "x";
       for (uint32_t i = 0; i < carry_cut_list[index].size()-1; i++) {
         auto leaf = carry_cut_list[index][i];
-        //std::cout << leaf << " ";
+        std::cout << " " << leaf;
         if (delays[leaf] > worst_delay) {
           worst_delay = delays[leaf];
           worst_delay_index = leaf;
@@ -803,23 +874,29 @@ private:
       }
     } else {
       for ( auto leaf: cuts.cuts(index).best() ) { 
-        //std::cout << leaf << " ";
+        std::cout << " " << leaf;
         if (delays[leaf] > worst_delay) {
           worst_delay = delays[leaf];
           worst_delay_index = leaf;
         }
         bool mult_path = count_path_to_node (index, index, leaf, 0) != 1;
         bool on_carry = !no_carry_on_path(index, index, leaf);
-        if ( mult_path || on_carry || ntk.is_constant(leaf) || ntk.is_pi(leaf) ) continue;
+        if ( mult_path || on_carry || ntk.is_constant(leaf) || ntk.is_pi(leaf) ) {
+          std::cout << "x";
+          continue;
+        }
 
-        uint32_t cost = num_critical_map_refs[leaf];
-        if ( crit_child_count == 0 || cost < crit_cost ) {
+        uint32_t cost = delays[leaf];
+        //uint32_t cost = map_refs[leaf];
+        if ( crit_child_count == 0 || delays[leaf] > delays[crit_child_index] || (delays[leaf] == delays[crit_child_index] && map_refs[leaf] < map_refs[crit_child_index])) {
           crit_child_index = leaf;
+          std::cout << "*";
           crit_cost = cost;
         }
         crit_child_count++;
       }  
     }
+    std::cout << "\n";
 
     
     // End if no possible leaf
@@ -868,38 +945,47 @@ private:
     ntk.clear_visited();
 
     std::vector<node<Ntk>> path_for_carry_chain;
-    ntk.foreach_po( [&]( auto const& s ) {
-      const auto node = ntk.get_node(s);
-      const auto index = ntk.node_to_index(node);
-       
-      if (ntk.is_pi(node) || ntk.is_constant(node) || counter > MAX_SEARCH) return;
 
-      if (ps.verbose && ps.verbosity > 3) 
-        std::cout << "\t\tPO " << index << "(" << delays[index] << "): " << counter << "\n";
+    for ( uint32_t delay_offset = 0; delay_offset < delay; delay_offset += LUT_DELAY ) {
+      if (ps.verbose && ps.verbosity > 3) std::cout << "\tMapping " << delay << " to " << delay-delay_offset << "\n";
+      counter = 0;
+      ntk.foreach_po( [&]( auto const& s ) {
+        const auto node = ntk.get_node(s);
+        const auto index = ntk.node_to_index(node);
+         
+        if (ntk.is_pi(node) || ntk.is_constant(node) || counter > MAX_SEARCH) return;
 
-      do {
-        find_all_LUT(counter, path_for_carry_chain, index, 0, 0, \
-            pi_count, chain_len_count, crit_count, mig_len_count, mult_path_count, \
-            lut_chain_len, num_crit_lut_in, mig_len);
+        if (delays[index] >= delay-delay_offset && delays[index] <= delay ) {
 
-          if (path_for_carry_chain.empty() || counter > MAX_SEARCH) return;
-          carry_paths.push_back(path_for_carry_chain);
-          for (uint32_t j = 1; j < path_for_carry_chain.size(); j++) {
-            carry_nodes[path_for_carry_chain[j]] += 1;
-            carry_driver_nodes[path_for_carry_chain[j]] = path_for_carry_chain[j-1];
-          }
-          path_for_carry_chain.clear();
-          ntk.clear_visited();
-          update_delay();
-          update_area(); 
-    
           if (ps.verbose && ps.verbosity > 3) 
-            std::cout << "\tMapped one chain, updated delay," << delay << "," << area << "\n\n";
-        } while (!path_for_carry_chain.empty());
-    } );
+            std::cout << "\t\tPO " << index << "(" << delays[index] << "): " << counter << "\n";
+
+          do {
+            path_for_carry_chain.clear();
+            ntk.clear_visited();
+            find_all_LUT(counter, path_for_carry_chain, index, 0, 0, \
+                pi_count, chain_len_count, crit_count, mig_len_count, mult_path_count, \
+                lut_chain_len, num_crit_lut_in, mig_len);
+
+            if (path_for_carry_chain.empty() || counter > MAX_SEARCH) return;
+            carry_paths.push_back(path_for_carry_chain);
+            for (uint32_t j = 1; j < path_for_carry_chain.size(); j++) {
+              carry_nodes[path_for_carry_chain[j]] += 1;
+              carry_driver_nodes[path_for_carry_chain[j]] = path_for_carry_chain[j-1];
+            }
+            update_delay();
+            update_area(); 
+      
+            if (ps.verbose && ps.verbosity > 3) 
+              std::cout << "\tMapped one chain, updated delay," << delay << "," << area << "\n\n";
+          } while (!path_for_carry_chain.empty());
+        }
+      } );
+    }
 
     print_carry_paths();
     update_delay();
+    update_area();
     std::cout << "Updated delay is " << delay << "\n";
     std::cout << "Total nodes explored is " << counter << " and failed for " \
       << pi_count << " " \
@@ -947,8 +1033,11 @@ private:
     uint32_t cut2_index[5] = {0, 1, 2, 3, 4};
     if (ps.verbose && ps.verbosity > 2) {
       std::cout << index << ":";
-      for (auto icut: carry_cut_list[index])
-        std::cout << icut << " ";
+      for (auto icut: carry_cut_list[index]) {
+        if (icut != cindex) {
+          std::cout << icut << " ";
+        }
+      }
       std::cout << "\n";
     }
     std::vector<uint32_t> cut_list;
@@ -971,8 +1060,8 @@ private:
     std::cout << "\n";
     std::cout << "\t" << i_child[1] << " ";
     kitty::print_hex (function2);
-    std::cout << "\n";
-    */
+    std::cout << "\n";*/
+    
 
     bool child_complement[3] = {0};
     determine_child_complement (child_complement, ntk.index_to_node(index),\
@@ -982,6 +1071,9 @@ private:
     uint32_t isize = carry_cut_list[index].size()-1;
     kitty::dynamic_truth_table function = combine_carry_LUT_function(isize, isize, isize, function1, function2, cut1_index, cut2_index, child_complement);
 
+    //std::cout << "\t" << index << " ";
+    //kitty::print_hex (function);
+    //std::cout << "\n";
     if (ps.verbose && ps.verbosity > 2) {
       std::cout << index << ":" << child_complement[0] << " " << child_complement[1] << " " << child_complement[2] << "\n";
       std::cout << index << ":";
@@ -990,6 +1082,90 @@ private:
     }
 
     ntk.set_cell_function(ntk.index_to_node(index), function);
+
+  }
+ 
+  bool set_direct_input (uint32_t cindex, uint32_t index) {
+    std::cout << index << " " << cindex << ":";
+    std::vector<uint32_t> cut_list;
+    carry_cut_list[index].clear();
+    for (auto icut: cuts.cuts(index)[0]) {
+      if (icut != cindex) {
+        cut_list.push_back(icut);
+        std::cout << " " << icut;
+        carry_cut_list[index].push_back(icut);
+      }
+    } 
+    carry_cut_list[index].push_back(cindex);
+
+    std::cout << "\n";
+    auto fcn_xsub1 = set_tt_const(index, ntk.get_children(index, 0), cut_list, cindex, 0);
+    auto fcn_xsub2 = set_tt_const(index, ntk.get_children(index, 1), cut_list, cindex, 0);
+    auto fcn_xsub3 = set_tt_const(index, ntk.get_children(index, 2), cut_list, cindex, 0);
+    auto fcn_sub1 = ntk.is_complemented_children(index,0) ? ~fcn_xsub1:fcn_xsub1; 
+    auto fcn_sub2 = ntk.is_complemented_children(index,1) ? ~fcn_xsub2:fcn_xsub2;
+    auto fcn_sub3 = ntk.is_complemented_children(index,2) ? ~fcn_xsub3:fcn_xsub3;
+    auto fcn_sub_OR1 = kitty::binary_or ( fcn_sub1, fcn_sub2 ); 
+    auto fcn_sub_OR2 = kitty::binary_or ( fcn_sub1, fcn_sub3 ); 
+    auto fcn_sub_OR3 = kitty::binary_or ( fcn_sub2, fcn_sub3 ); 
+    auto fcn_sub_AND1 = kitty::binary_and ( fcn_sub1, fcn_sub2 ); 
+    auto fcn_sub_AND2 = kitty::binary_and ( fcn_sub1, fcn_sub3 ); 
+    auto fcn_sub_AND3 = kitty::binary_and ( fcn_sub2, fcn_sub3 ); 
+
+    auto fcn_top_OR = set_tt_const(index, index, cut_list, cindex, 0);
+    auto fcn_top_AND = set_tt_const(index, index, cut_list, cindex, 1);
+
+    auto function1 = fcn_sub_OR1;
+    auto function2 = fcn_sub_OR1;
+    if ( fcn_sub_OR1 == fcn_top_OR && fcn_sub_AND1 == fcn_top_AND ) {
+      function2 = fcn_sub_OR1;
+      function1 = fcn_sub_AND1;
+    } else if ( fcn_sub_OR1 == fcn_top_AND && fcn_sub_AND1 == fcn_top_OR ) {
+      function1 = fcn_sub_OR1;
+      function2 = fcn_sub_AND1;
+    } else if ( fcn_sub_OR2 == fcn_top_OR && fcn_sub_AND2 == fcn_top_AND ) {
+      function2 = fcn_sub_OR2;
+      function1 = fcn_sub_AND2;
+    } else if ( fcn_sub_OR2 == fcn_top_AND && fcn_sub_AND2 == fcn_top_OR ) {
+      function1 = fcn_sub_OR2;
+      function2 = fcn_sub_AND2;
+    } else if ( fcn_sub_OR3 == fcn_top_OR && fcn_sub_AND3 == fcn_top_AND ) {
+      function2 = fcn_sub_OR3;
+      function1 = fcn_sub_AND3;
+    } else if ( fcn_sub_OR3 == fcn_top_AND && fcn_sub_AND3 == fcn_top_OR ) {
+      function1 = fcn_sub_OR3;
+      function2 = fcn_sub_AND3;
+    } else return false; 
+
+    kitty::dynamic_truth_table func (cut_list.size()+1);
+    func._bits[0] = uint64_t(uint64_t(function1._bits[0]) << uint32_t(pow(2,(cut_list.size())))) + function2._bits[0];
+
+    uint32_t cut1_index[5] = {0, 1, 2, 3, 4};
+    uint32_t cut2_index[5] = {0, 1, 2, 3, 4};
+    bool child_complement[3] = {0};
+    uint32_t isize = cut_list.size();
+    kitty::dynamic_truth_table function = combine_carry_LUT_function\
+      (isize, isize, isize, function1, function2, cut1_index, cut2_index, \
+      child_complement);
+    
+    ntk.set_cell_function(ntk.index_to_node(index), function);
+
+    std::cout << "\t\t" << index << " ";
+    kitty::print_hex(func);
+    std::cout << ": "; 
+    kitty::print_hex(function);
+    std::cout << ": ";
+    kitty::print_hex (function1);
+    std::cout << " "; 
+    kitty::print_hex (function2);
+    std::cout << "\n";
+    cut_list.push_back(cindex);
+    auto fcn = flip_carry_user_tt(index,index,cut_list); 
+    std::cout << "\t\t" << "original ";
+    kitty::print_hex(fcn);
+    std::cout << "\n";
+    assert(func == fcn);
+    return true;
 
   }
 
@@ -1040,25 +1216,308 @@ private:
 
   void count_mappable_nodes (uint32_t n_crit, uint32_t mig_path_len) {
     uint32_t node_count = 0;
-    uint32_t mappable_node_count = 1;
+    uint32_t mappable_node_count = 0;
+    uint32_t direct_input_mappable = 0;
     ntk.foreach_node( [&]( auto n, auto ) {
       uint32_t index = ntk.node_to_index(n);
       uint32_t num_path = 0;
       uint32_t num_crit_path = 0;
+      uint32_t direct_input = 0;
       if ( ntk.is_constant( n ) || ntk.is_pi( n ) ) {
         return;
       }
+      //std::cout << index << ":\n";
       for ( auto leaf: cuts.cuts(index)[0] ) {
-        if (delays[leaf] == delays[index] - LUT_DELAY) {
+        if (delays[leaf] == delays[index] - LUT_DELAY && map_refs[index] > 0) {
           num_crit_path++;
-          if (count_path_to_node (index, index, leaf, 0) == 1 && length_to_node(index, index, leaf) < mig_path_len) num_path++;
-        }
+          if ( count_path_to_node (index, index, leaf, 0) == 1  && length_to_node(index, index, leaf) <= mig_path_len ) {
+            num_path++;
+            //std::cout << "\t" << leaf << "*:" <<count_path_to_node (index, index, leaf, 0) << " "<< length_to_node(index, index, leaf) << "\n";
+          }
+          if ( check_direct_input (leaf, index) ) {
+            direct_input++;
+            //std::cout << "\t" << leaf << "^:\n";
+          }
 
+          if ( length_to_node(index, index, leaf) > 3 && check_shorter_path(leaf, index, index)) {
+            print_lut(index,index);
+            std::cout << index << "->" << leaf << ": " << length_to_node(index, index, leaf) << "\n";
+          }
+          //if ( count_path_to_node (index, index, leaf, 0) != 1 && check_direct_input(leaf,index) ) {
+            //std::cout << index << "->" << leaf << ": " << count_path_to_node (index, index, leaf, 0) << "\n";
+            //print_lut(index,index);
+            //set_direct_input(leaf,index);
+          //}   
+          //if ( count_path_to_node (index, index, leaf, 0) == 1 && length_to_node(index, index, leaf) > mig_path_len && check_direct_input(leaf,index) ) {
+            //std::cout << index << "->" << leaf << ": " << length_to_node(index, index, leaf) << "\n";
+            //print_lut(index,index);
+            //set_direct_input(leaf,index);
+          //}   
+        }
       }
+      //std::cout << "\n";
       if (num_crit_path <= n_crit && num_path == num_crit_path) mappable_node_count++;
+      if (num_crit_path <= n_crit && direct_input == num_crit_path) direct_input_mappable++;
+      if (num_crit_path <= n_crit && num_path != direct_input) {
+        //std::cout << index << "\n";
+      }
       node_count++;
     });
     std::cout << "There are " << node_count << " nodes and " << mappable_node_count << " nodes are mappable.\n";
+    std::cout << "Also, " << direct_input_mappable << " nodes might be mappable\n";
+  }
+  
+  bool is_dependent (uint32_t index, uint32_t cindex, uint32_t curr_index) {
+    if (ntk.is_constant(curr_index)) return false;
+    //std::cout << "\t\t\t" << curr_index << "\n";
+    if (cindex == curr_index) {
+      return true;
+    }
+    for (auto icut: cuts.cuts(index)[0]) {
+      if (curr_index == icut) return false;
+    }
+
+    for (uint32_t i = 0; i < ntk.fanin_size(curr_index); i++) {
+      auto nchild = ntk.get_children(curr_index,i);
+      if (ntk.is_constant(nchild) || ntk.is_pi(nchild)) continue;
+      if (is_dependent(index, cindex, nchild)) return true;
+    }
+
+    return false;
+  }
+
+  bool check_shorter_path (uint32_t cindex, uint32_t curr_index, uint32_t index) {
+    // check index is not dependent on cindex
+    auto child0 = ntk.get_children(curr_index, 0);
+    auto child1 = ntk.get_children(curr_index, 1);
+    auto child2 = ntk.get_children(curr_index, 2);
+    auto indep0 = !is_dependent(index, cindex, child0);
+    auto indep1 = !is_dependent(index, cindex, child1);
+    auto indep2 = !is_dependent(index, cindex, child2);
+    if (indep0 && indep1) {
+      //std::cout << "\t1." << child2 << ":\n";
+      if (!ntk.is_constant(child2) && child2 != cindex && check_shorter_input (cindex, child2, index)) return true;//std::cout << "HERE\n";
+    }
+    if (indep0 && indep2) {
+      //std::cout << "\t2." << child1 << ":\n";
+      if (!ntk.is_constant(child1) && child1 != cindex && check_shorter_input (cindex, child1, index)) return true; //std::cout << "HERE\n";
+    }
+    if (indep1 && indep2) {
+      //std::cout << "\t3." << child0 << ":\n";
+      if (!ntk.is_constant(child0) && child0 != cindex && check_shorter_input (cindex, child0, index)) return true; //std::cout << "HERE\n";
+    }
+    return false;
+  }
+   bool check_shorter_input (uint32_t cindex, uint32_t index, uint32_t cut_index) {
+    //std::cout << index << " " << cindex << ":";
+    std::vector<uint32_t> cut_list;
+    for (auto icut: cuts.cuts(cut_index)[0]) {
+      if (icut != cindex) {
+        cut_list.push_back(icut);
+        //std::cout << " " << icut;
+      }
+      if (icut == index) return false;
+    } 
+    if (cut_list.size() > 5) return false;
+    //std::cout << "\n";
+    auto fcn_xsub1 = set_tt_const(index, ntk.get_children(index, 0), cut_list, cindex, 0);
+    auto fcn_xsub2 = set_tt_const(index, ntk.get_children(index, 1), cut_list, cindex, 0);
+    auto fcn_xsub3 = set_tt_const(index, ntk.get_children(index, 2), cut_list, cindex, 0);
+    auto fcn_sub1 = ntk.is_complemented_children(index,0) ? ~fcn_xsub1:fcn_xsub1; 
+    auto fcn_sub2 = ntk.is_complemented_children(index,1) ? ~fcn_xsub2:fcn_xsub2;
+    auto fcn_sub3 = ntk.is_complemented_children(index,2) ? ~fcn_xsub3:fcn_xsub3;
+    auto fcn_sub_OR1 = kitty::binary_or ( fcn_sub1, fcn_sub2 ); 
+    auto fcn_sub_OR2 = kitty::binary_or ( fcn_sub1, fcn_sub3 ); 
+    auto fcn_sub_OR3 = kitty::binary_or ( fcn_sub2, fcn_sub3 ); 
+    auto fcn_sub_AND1 = kitty::binary_and ( fcn_sub1, fcn_sub2 ); 
+    auto fcn_sub_AND2 = kitty::binary_and ( fcn_sub1, fcn_sub3 ); 
+    auto fcn_sub_AND3 = kitty::binary_and ( fcn_sub2, fcn_sub3 ); 
+
+    auto fcn_top_OR = set_tt_const(index, index, cut_list, cindex, 0);
+    auto fcn_top_AND = set_tt_const(index, index, cut_list, cindex, 1);
+
+    auto function1 = fcn_sub_OR1;
+    auto function2 = fcn_sub_OR1;
+
+    /*std::cout << "\t\t" << index << ":";
+    kitty::print_hex(fcn_top_AND);
+    std::cout << " "; 
+    kitty::print_hex(fcn_top_OR);
+    std::cout << ": "; 
+    kitty::print_hex(fcn_sub_OR1);
+    std::cout << " "; 
+    kitty::print_hex(fcn_sub_OR2);
+    std::cout << " "; 
+    kitty::print_hex(fcn_sub_OR3);
+    std::cout << " "; 
+    kitty::print_hex(fcn_sub_AND1);
+    std::cout << " "; 
+    kitty::print_hex(fcn_sub_AND2);
+    std::cout << " "; 
+    kitty::print_hex(fcn_sub_AND3);
+    std::cout << "\n"; 
+*/
+    if ( fcn_sub_OR1 == fcn_top_OR && fcn_sub_AND1 == fcn_top_AND ) {
+      function2 = fcn_sub_OR1;
+      function1 = fcn_sub_AND1;
+    } else if ( fcn_sub_OR1 == fcn_top_AND && fcn_sub_AND1 == fcn_top_OR ) {
+      function1 = fcn_sub_OR1;
+      function2 = fcn_sub_AND1;
+    } else if ( fcn_sub_OR2 == fcn_top_OR && fcn_sub_AND2 == fcn_top_AND ) {
+      function2 = fcn_sub_OR2;
+      function1 = fcn_sub_AND2;
+    } else if ( fcn_sub_OR2 == fcn_top_AND && fcn_sub_AND2 == fcn_top_OR ) {
+      function1 = fcn_sub_OR2;
+      function2 = fcn_sub_AND2;
+    } else if ( fcn_sub_OR3 == fcn_top_OR && fcn_sub_AND3 == fcn_top_AND ) {
+      function2 = fcn_sub_OR3;
+      function1 = fcn_sub_AND3;
+    } else if ( fcn_sub_OR3 == fcn_top_AND && fcn_sub_AND3 == fcn_top_OR ) {
+      function1 = fcn_sub_OR3;
+      function2 = fcn_sub_AND3;
+    } else return false; 
+
+    kitty::dynamic_truth_table function (cut_list.size()+1);
+    function._bits[0] = uint64_t(uint64_t(function1._bits[0]) << uint32_t(pow(2,(cut_list.size())))) + function2._bits[0];
+/*
+    std::cout << "\t\t" << index << " ";
+    kitty::print_hex(function);
+    std::cout << ": "; 
+    kitty::print_hex (function1);
+    std::cout << " "; 
+    kitty::print_hex (function2);
+    std::cout << "\n";*/
+    cut_list.push_back(cindex);
+    auto fcn = flip_carry_user_tt(index,index,cut_list); 
+    /*std::cout << "\t\t" << "original ";
+    kitty::print_hex(fcn);
+    std::cout << "\n";*/
+    assert(function == fcn);
+    return true;
+
+  }
+  bool check_direct_input (uint32_t cindex, uint32_t index) {
+    //std::cout << index << " " << cindex << ":";
+    std::vector<uint32_t> cut_list;
+    for (auto icut: cuts.cuts(index)[0]) {
+      if (icut != cindex) {
+        cut_list.push_back(icut);
+        //std::cout << " " << icut;
+      }
+    } 
+    if (cut_list.size() > 5) return false;
+    //std::cout << "\n";
+    auto fcn_xsub1 = set_tt_const(index, ntk.get_children(index, 0), cut_list, cindex, 0);
+    auto fcn_xsub2 = set_tt_const(index, ntk.get_children(index, 1), cut_list, cindex, 0);
+    auto fcn_xsub3 = set_tt_const(index, ntk.get_children(index, 2), cut_list, cindex, 0);
+    auto fcn_sub1 = ntk.is_complemented_children(index,0) ? ~fcn_xsub1:fcn_xsub1; 
+    auto fcn_sub2 = ntk.is_complemented_children(index,1) ? ~fcn_xsub2:fcn_xsub2;
+    auto fcn_sub3 = ntk.is_complemented_children(index,2) ? ~fcn_xsub3:fcn_xsub3;
+    auto fcn_sub_OR1 = kitty::binary_or ( fcn_sub1, fcn_sub2 ); 
+    auto fcn_sub_OR2 = kitty::binary_or ( fcn_sub1, fcn_sub3 ); 
+    auto fcn_sub_OR3 = kitty::binary_or ( fcn_sub2, fcn_sub3 ); 
+    auto fcn_sub_AND1 = kitty::binary_and ( fcn_sub1, fcn_sub2 ); 
+    auto fcn_sub_AND2 = kitty::binary_and ( fcn_sub1, fcn_sub3 ); 
+    auto fcn_sub_AND3 = kitty::binary_and ( fcn_sub2, fcn_sub3 ); 
+
+    auto fcn_top_OR = set_tt_const(index, index, cut_list, cindex, 0);
+    auto fcn_top_AND = set_tt_const(index, index, cut_list, cindex, 1);
+
+    auto function1 = fcn_sub_OR1;
+    auto function2 = fcn_sub_OR1;
+
+    /*std::cout << "\t\t" << index << ":";
+    kitty::print_hex(fcn_top_AND);
+    std::cout << " "; 
+    kitty::print_hex(fcn_top_OR);
+    std::cout << ": "; 
+    kitty::print_hex(fcn_sub_OR1);
+    std::cout << " "; 
+    kitty::print_hex(fcn_sub_OR2);
+    std::cout << " "; 
+    kitty::print_hex(fcn_sub_OR3);
+    std::cout << " "; 
+    kitty::print_hex(fcn_sub_AND1);
+    std::cout << " "; 
+    kitty::print_hex(fcn_sub_AND2);
+    std::cout << " "; 
+    kitty::print_hex(fcn_sub_AND3);
+    std::cout << "\n"; 
+*/
+    if ( fcn_sub_OR1 == fcn_top_OR && fcn_sub_AND1 == fcn_top_AND ) {
+      function2 = fcn_sub_OR1;
+      function1 = fcn_sub_AND1;
+    } else if ( fcn_sub_OR1 == fcn_top_AND && fcn_sub_AND1 == fcn_top_OR ) {
+      function1 = fcn_sub_OR1;
+      function2 = fcn_sub_AND1;
+    } else if ( fcn_sub_OR2 == fcn_top_OR && fcn_sub_AND2 == fcn_top_AND ) {
+      function2 = fcn_sub_OR2;
+      function1 = fcn_sub_AND2;
+    } else if ( fcn_sub_OR2 == fcn_top_AND && fcn_sub_AND2 == fcn_top_OR ) {
+      function1 = fcn_sub_OR2;
+      function2 = fcn_sub_AND2;
+    } else if ( fcn_sub_OR3 == fcn_top_OR && fcn_sub_AND3 == fcn_top_AND ) {
+      function2 = fcn_sub_OR3;
+      function1 = fcn_sub_AND3;
+    } else if ( fcn_sub_OR3 == fcn_top_AND && fcn_sub_AND3 == fcn_top_OR ) {
+      function1 = fcn_sub_OR3;
+      function2 = fcn_sub_AND3;
+    } else return false; 
+
+    kitty::dynamic_truth_table function (cut_list.size()+1);
+    function._bits[0] = uint64_t(uint64_t(function1._bits[0]) << uint32_t(pow(2,(cut_list.size())))) + function2._bits[0];
+
+    /*std::cout << "\t\t" << index << " ";
+    kitty::print_hex(function);
+    std::cout << ": "; 
+    kitty::print_hex (function1);
+    std::cout << " "; 
+    kitty::print_hex (function2);
+    std::cout << "\n";*/
+    cut_list.push_back(cindex);
+    auto fcn = flip_carry_user_tt(index,index,cut_list); 
+    /*std::cout << "\t\t" << "original ";
+    kitty::print_hex(fcn);
+    std::cout << "\n";*/
+    assert(function == fcn);
+    return true;
+
+  }
+
+  kitty::dynamic_truth_table set_tt_const ( uint32_t index, uint32_t curr_index, auto cut_leaf_list, uint32_t const_leaf, bool val ) {
+ 
+    kitty::dynamic_truth_table tt_new (cut_leaf_list.size());
+
+    if ( ntk.is_constant(curr_index) ) return tt_new;
+    if ( curr_index == const_leaf ) {
+      if (val) return ~tt_new;//._bits[0]=0xFFFFFFFFFFFFFFFF;
+      else return tt_new;
+    }
+
+    uint32_t place = 0;
+    for (auto leaf: cut_leaf_list) {
+      if (leaf == curr_index ) {
+        for (uint64_t k = 0; k < pow(2,cut_leaf_list.size()); k++) {
+          tt_new._bits[0] += uint64_t(get_bit(k, place) << k);
+        }
+        return tt_new;
+      }
+      place++;
+    } 
+ 
+    auto n = ntk.index_to_node(curr_index);
+
+    uint32_t j = 0; 
+    std::vector<kitty::dynamic_truth_table> tt_child(3);
+    ntk.foreach_fanin( n, [&]( auto const& f ) {
+      auto n_child = ntk.get_node(f);
+      tt_child[j] = set_tt_const(index, n_child, cut_leaf_list, const_leaf, val);
+      j++;  
+    });
+  
+    tt_new = ntk.compute(n, tt_child.begin(), tt_child.end());
+    return tt_new;
+    
   }
 
   // How many critical POs (not paths) does the node connect to eventually
@@ -1107,11 +1566,11 @@ private:
       }
     }
 
-    /*std::cout << "Critical nodes are:\n";
+    std::cout << "Critical nodes are:\n";
     for (int32_t i = num_critical_path_through_node.size() - 1; i >= 0; i--) {
       if (num_critical_path_through_node[i] > 0)
         std::cout << i << "(" << delays[i] << ") = " << num_critical_map_refs[i] << " " << map_refs[i] << " " << num_critical_path_through_node[i] << "\n"; 
-    }*/
+    }
   }
  
   bool path_selection (std::vector<node<Ntk>>& path_for_carry_chain, uint32_t delay_offset) {
@@ -1252,8 +1711,6 @@ private:
   }
 
   // Remove inverters in the carry path
-  // 32 -> 193 -> !193 -> 249
-  // inputs of 193 will be inverted and 193 won't be anymore  
   void remove_inverter() {
 
     // Traverse through the list backwards to avoid carry in with dependencies on path after
@@ -1322,6 +1779,21 @@ private:
             mapped_to_5LUT_complemented[child_node] = ntk.is_complemented_children(carry_node,i);
           }
         }
+        if (carry_i == carry_path.size()-1) {
+          ntk.foreach_po( [this]( auto s ) {
+            const auto index = ntk.node_to_index( ntk.get_node( s ) );
+            if (is_a_carry_node(ntk.get_node(s)) && ntk.is_complemented(s)) {
+              carry_nodes[ntk.index_to_node(index)] = 0;
+              
+              std::cout << "Undoing carry for the last PO node " << ntk.get_node(s) << " if inverted\n";
+
+              //delays[index] += LUT_DELAY;
+              //std::cout << "Updating this particular delay " << index << "(" << delays[index] << ")\n";
+            }
+            delay = std::max( delay, delays[index] );
+          });
+
+        }
       }
     }
 
@@ -1329,6 +1801,10 @@ private:
     ntk.foreach_po( [this]( auto s ) {
       const auto index = ntk.node_to_index( ntk.get_node( s ) );
       if (is_a_carry_node(ntk.get_node(s)) && ntk.is_complemented(s)) {
+        carry_nodes[ntk.index_to_node(index)] = 0;
+        
+        //std::cout << "Undoing carry for the last PO node if inverted\n";
+
         delays[index] += LUT_DELAY;
         std::cout << "Updating this particular delay " << index << "(" << delays[index] << ")\n";
       }
@@ -1935,6 +2411,7 @@ private:
         curr_LUT++;
       }
     }
+    assert(curr_LUT <= 2);
   }
 
   // This function takes an array and an index with its carry-in index
@@ -2396,13 +2873,13 @@ private:
   // LUT Mapping 
   ///////////////////////////////////////////////////////////////
   template<bool ELA>
-  void compute_mapping( bool delay )
+  void compute_mapping( bool delay, bool baseline )
   {
     for ( auto const& n : top_order )
     {
       if ( ntk.is_constant( n ) || ntk.is_pi( n ) || is_a_carry_node( n ) )
         continue;
-      compute_best_cut<ELA>( ntk.node_to_index( n ), delay );
+      compute_best_cut<ELA>( ntk.node_to_index( n ), delay, baseline );
     }
     set_mapping_refs<ELA>();
   }
@@ -2569,7 +3046,7 @@ private:
   }
  
   template<bool ELA>
-  void compute_best_cut( uint32_t index, bool delay )
+  void compute_best_cut( uint32_t index, bool delay, bool baseline )
   {
     constexpr auto mf_eps{0.005f};
 
@@ -2617,14 +3094,11 @@ private:
         } 
       } 
      
-      cost = (n_crit - path_factor);
-      /*auto temp_flow = 0; 
-      if (cost != 0) {
-        temp_flow = flow + 1.0;
-      }*/
+      if (baseline) cost = 0;
+      else cost = (n_crit - path_factor);
 
       if ( delay ) {
-        if ( best_cut == -1 || best_time > time || ( best_time == time &&  best_flow > flow + mf_eps ) //)
+        if ( best_cut == -1 || best_time > time || ( best_time == time &&  best_flow > flow + mf_eps ) 
         || ( best_time == time && best_flow > flow - mf_eps && best_cost > cost ) )
         {
           best_cut = cut_index;
@@ -2633,7 +3107,7 @@ private:
           best_cost = cost;
         }
       } else {
-        if ( best_cut == -1 || best_flow > flow + mf_eps || ( best_flow > flow - mf_eps && best_time > time ) //) 
+        if ( best_cut == -1 || best_flow > flow + mf_eps || ( best_flow > flow - mf_eps && best_time > time )
         || ( best_flow > flow - mf_eps && best_time == time && best_cost > cost ) )
         {
           best_cut = cut_index;
@@ -2780,7 +3254,7 @@ private:
     bool flip = false;
     for (auto leaf: cut_leaf_list) {
       if (leaf == curr_index ) {
-        if(ps.verbose && ps.verbosity > 3) std::cout << "\tfound leaf " << leaf << "\n";
+        if(ps.verbose && ps.verbosity > 4) std::cout << "\tfound leaf " << leaf << "\n";
         if (mapped_to_5LUT_complemented[leaf] == true) {
           std::cout << "\tflip " << leaf << "\n";
           flip = true;
