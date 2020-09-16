@@ -36,6 +36,7 @@
 #include <cstdint>
 #include <iomanip>
 #include <iostream>
+#include <cstdlib>
 
 #include "../cut_enumeration.hpp"
 
@@ -66,19 +67,33 @@ bool operator<( cut_type<ComputeTruth, cut_enumeration_mf_cut> const& c1, cut_ty
   //if ( c1->data.n_crit <= 2 && c1_cost == 0 && c2_cost > 0)
   //  return true; 
   //if ( c2->data.n_crit <= 2 && c2_cost == 0 && c1_cost > 0)
-  //  return false; 
-  if ( c1->data.flow < c2->data.flow - eps )
-    return true;
-  if ( c1->data.flow > c2->data.flow + eps )
-    return false;
+  //  return false;
+
+  const char* env_p = std::getenv("DELAY");
+  if (env_p == NULL) assert("Set delay env" && 0);
+  if (std::strcmp(env_p,"delay")==0) {
+    if ( c1->data.delay < c2->data.delay )
+      return true;
+    if ( c1->data.delay > c2->data.delay )
+      return false;
+    if ( c1->data.flow < c2->data.flow - eps )
+      return true;
+    if ( c1->data.flow > c2->data.flow + eps )
+      return false;
+  } else {
+    if ( c1->data.flow < c2->data.flow - eps )
+      return true;
+    if ( c1->data.flow > c2->data.flow + eps )
+      return false;
+    if ( c1->data.delay < c2->data.delay )
+      return true;
+    if ( c1->data.delay > c2->data.delay )
+      return false;
+  } 
   //if ( c1_cost == 0 && c2_cost > 0)
   //  return true; 
   //if ( c2_cost == 0 && c1_cost > 0)
   //  return false; 
-  if ( c1->data.delay < c2->data.delay )
-    return true;
-  if ( c1->data.delay > c2->data.delay )
-    return false;
   return c1.size() < c2.size();
 }
 
@@ -116,19 +131,19 @@ struct cut_enumeration_update_cut<cut_enumeration_mf_cut>
     uint32_t delay{0};
     float flow = cut->data.cost = cut.size() < 2 ? 0.0f : 1.0f;
 
-    auto index = ntk.node_to_index(n);
+    //auto index = ntk.node_to_index(n);
 
-    cut->data.n_crit=0;
-    cut->data.n_mappable_crit=0;
+    //cut->data.n_crit=0;
+    //cut->data.n_mappable_crit=0;
     for ( auto leaf : cut )
     {
       const auto& best_leaf_cut = cuts.cuts( leaf )[0];
       delay = std::max( delay, best_leaf_cut->data.delay );
-      if (delay == best_leaf_cut->data.delay) {
-        cut->data.n_crit++;
-        if (count_path_to_node<Cut, Ntk>( cut, ntk, index, index, leaf ) == 1)
-          cut->data.n_mappable_crit++;
-      }
+      //if (delay == best_leaf_cut->data.delay) {
+        //cut->data.n_crit++;
+        //if (count_path_to_node<Cut, Ntk>( cut, ntk, index, index, leaf ) == 1)
+        //  cut->data.n_mappable_crit++;
+      //}
       flow += best_leaf_cut->data.flow;
        
     }
