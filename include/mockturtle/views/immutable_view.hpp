@@ -60,8 +60,8 @@ public:
   immutable_view( Ntk const& ntk ) : Ntk( ntk )
   {
   }
-
-  signal create_pi( std::string const& name = {} ) = delete;
+;
+/*  signal create_pi( std::string const& name = {} ) = delete;
   void create_po( signal const& s, std::string const& name = {} ) = delete;
   signal create_buf( signal const& f ) = delete;
   signal create_not( signal const& f ) = delete;
@@ -80,6 +80,7 @@ public:
   signal create_node( std::vector<signal> const& fanin, kitty::dynamic_truth_table const& function ) = delete;
   signal clone_node( immutable_view<Ntk> const& other, node const& source, std::vector<signal> const& fanin ) = delete;
   void substitute_node( node const& old_node, node const& new_node ) = delete;
+*/
 };
 
 }

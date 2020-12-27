@@ -8,7 +8,9 @@
 
 #include <mockturtle/io/verilog_reader.hpp>
 #include <mockturtle/io/write_blif.hpp>
-#include <mockturtle/algorithms/carry_lut_mapping.hpp>
+#include <mockturtle/io/write_verilog.hpp>
+//#include <mockturtle/algorithms/carry_lut_mapping.hpp>
+#include <mockturtle/algorithms/post_carry_lut_mapping.hpp>
 #include <mockturtle/algorithms/collapse_mapped.hpp>
 #include <mockturtle/networks/mig.hpp>
 #include <mockturtle/views/depth_view.hpp>
@@ -16,6 +18,10 @@
 #include <mockturtle/views/mapping_view.hpp>
 #include <mockturtle/networks/klut.hpp>
 #include <mockturtle/io/write_dot.hpp>
+#include <mockturtle/algorithms/cut_rewriting.hpp>
+#include <mockturtle/algorithms/node_resynthesis/mig_npn.hpp>
+#include <mockturtle/algorithms/node_resynthesis.hpp>
+#include <mockturtle/algorithms/cleanup.hpp>
 
 using namespace mockturtle;
 
@@ -39,6 +45,11 @@ int main (int argc, char *argv[]){
   if (result != lorina::return_code::success) {
     std::cout << "Parsing Error.\n"; 
   }
+
+  //mig_npn_resynthesis resyn( false ); 
+  //cut_rewriting( mig, resyn ); 
+  //cleanup_dangling( mig );
+
   depth_view depth_mig { mig }; 
 
   //////////////////////////////////////////////////////
@@ -65,14 +76,14 @@ int main (int argc, char *argv[]){
   } else {
     mapping_params.carry_mapping = true;
     outputName = getFileName(argv[1]) + "_carry";
-    if (argc > 5)
-      mapping_params.length= std::stoi(argv[5]); 
-    if (argc > 6)
-      mapping_params.num_crit_path = std::stoi(argv[6]);
-    if (argc > 7 && argv[7] == std::string("direct"))
-      mapping_params.direct = true;
-    else 
-      mapping_params.direct = false;
+    //if (argc > 5)
+    //  mapping_params.length= std::stoi(argv[5]); 
+    //if (argc > 6)
+    //  mapping_params.num_crit_path = std::stoi(argv[6]);
+    //if (argc > 7 && argv[7] == std::string("direct"))
+    //  mapping_params.direct = true;
+    //else 
+    //  mapping_params.direct = false;
   }
 
   mapping_view <mig_network, true> carry_mapped_mig { mig };
@@ -93,6 +104,11 @@ int main (int argc, char *argv[]){
       return;
     }
   });
+
+  //mig_npn_resynthesis resyn;
+  //const auto new_mig = node_resynthesis<mig_network>( klut_carry, resyn );
+  //write_verilog(mig, "mig1.txt");//, false/*carry mapping*/, mapping_params.xilinx_arch );
+  //write_verilog(mig_resyn, "mig2.txt");//, false/*carry mapping*/, mapping_params.xilinx_arch );
  
   // Write blif output. Last line will be a comment on what run it was 
   write_blif(klut_carry, "blif/" + outputName+".blif", true/*carry mapping*/, mapping_params.xilinx_arch );
@@ -100,9 +116,7 @@ int main (int argc, char *argv[]){
   blifOut << "# " << outputName
           << " baseline=" << !mapping_params.carry_mapping
           << " delay=" << mapping_params.delay 
-          << " xilinx=" << mapping_params.xilinx_arch 
-          << " maxCarryRounds=" << mapping_params.max_rounds_carry
-          << " cost=" << mapping_params.cost << "\n\n"; 
+          << " xilinx=" << mapping_params.xilinx_arch << "\n\n";
   blifOut.close();
 
   std::cout << "Results for " << outputName  << ",";
@@ -117,9 +131,7 @@ int main (int argc, char *argv[]){
   std::cout << "# " << outputName
           << " baseline=" << !mapping_params.carry_mapping
           << " delay=" << mapping_params.delay 
-          << " xilinx=" << mapping_params.xilinx_arch 
-          << " maxCarryRounds=" << mapping_params.max_rounds_carry
-          << " cost=" << mapping_params.cost << "\n\n"; 
+          << " xilinx=" << mapping_params.xilinx_arch << "\n\n";
   //depth_mig.print_levels();
   //depth_klut_carry.print_levels();
   //depth_klut_carry.print_num_paths_at_max_level();
