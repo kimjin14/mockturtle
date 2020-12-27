@@ -340,8 +340,6 @@ private:
 
   // Print the critical MIG path
   void print_critical_path () {
-
-    std::cout << "Critical path:\n";
   
     uint32_t lut_count = 0;
     uint32_t carry_count = 0;  
@@ -356,8 +354,9 @@ private:
         worst_delay = _levels[index];
       }
     });
-    print_critical_path_helper (critical_index, lut_count, lut_carry_count, carry_count);
-    std::cout << "total: " << lut_count << " " << lut_carry_count << " " << carry_count << "\n";
+    //std::cout << "Critical path:\n";
+    //print_critical_path_helper (critical_index, lut_count, lut_carry_count, carry_count);
+    //std::cout << "total: " << lut_count << " " << lut_carry_count << " " << carry_count << "\n";
   }
 
   bool _count_complements{false};
