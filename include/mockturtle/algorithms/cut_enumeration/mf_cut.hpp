@@ -54,20 +54,13 @@ struct cut_enumeration_mf_cut
   float cost{0};
   uint32_t n_crit{0};
   uint32_t n_mappable_crit{0};
+  bool preferred{false};
 };
 
 template<bool ComputeTruth>
 bool operator<( cut_type<ComputeTruth, cut_enumeration_mf_cut> const& c1, cut_type<ComputeTruth, cut_enumeration_mf_cut> const& c2 )
 {
   constexpr auto eps{0.005f};
-
-  //uint32_t c1_cost = c1->data.n_crit - c1->data.n_mappable_crit;
-  //uint32_t c2_cost = c2->data.n_crit - c2->data.n_mappable_crit;
-
-  //if ( c1->data.n_crit <= 2 && c1_cost == 0 && c2_cost > 0)
-  //  return true; 
-  //if ( c2->data.n_crit <= 2 && c2_cost == 0 && c1_cost > 0)
-  //  return false;
 
   const char* env_p = std::getenv("DELAY");
   if (env_p == NULL) assert("Set delay env" && 0);
@@ -94,6 +87,14 @@ bool operator<( cut_type<ComputeTruth, cut_enumeration_mf_cut> const& c1, cut_ty
   //  return true; 
   //if ( c2_cost == 0 && c1_cost > 0)
   //  return false; 
+  //if (c1->data.preferred && !c2->data.preferred) {
+  //  std::cout << "c1 preferred\n"; 
+  //  return true;
+  //}
+  //if (c2->data.preferred && !c1->data.preferred) { 
+  //  std::cout << "c2 preferred\n"; 
+  //  return true;
+  //}
   return c1.size() < c2.size();
 }
 
@@ -131,22 +132,27 @@ struct cut_enumeration_update_cut<cut_enumeration_mf_cut>
     uint32_t delay{0};
     float flow = cut->data.cost = cut.size() < 2 ? 0.0f : 1.0f;
 
-    //auto index = ntk.node_to_index(n);
-
-    //cut->data.n_crit=0;
-    //cut->data.n_mappable_crit=0;
-    for ( auto leaf : cut )
-    {
+    auto index = ntk.node_to_index(n);
+    
+    for ( auto leaf : cut ) {
       const auto& best_leaf_cut = cuts.cuts( leaf )[0];
       delay = std::max( delay, best_leaf_cut->data.delay );
-      //if (delay == best_leaf_cut->data.delay) {
-        //cut->data.n_crit++;
-        //if (count_path_to_node<Cut, Ntk>( cut, ntk, index, index, leaf ) == 1)
-        //  cut->data.n_mappable_crit++;
-      //}
       flow += best_leaf_cut->data.flow;
-       
     }
+    uint32_t n_crit = 0;
+    uint32_t n_mappable_crit = 0;
+    for ( auto leaf : cut ) {
+      const auto& best_leaf_cut = cuts.cuts( leaf )[0];
+      if (delay == best_leaf_cut->data.delay) {
+        n_crit++;
+        if (count_path_to_node<Cut, Ntk>( cut, ntk, index, index, leaf ) == 1)
+          n_mappable_crit++;
+      }
+    }
+    if ( n_crit == 1 && n_mappable_crit == 1) cut->data.preferred = true;
+    else cut->data.preferred = false;
+    cut->data.n_crit = n_crit;
+    cut->data.n_mappable_crit = n_mappable_crit;
     cut->data.delay = 1 + delay;
     cut->data.flow = flow / ntk.fanout_size( n );
   }
