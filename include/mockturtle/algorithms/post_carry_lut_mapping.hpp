@@ -181,33 +181,14 @@ public:
   }
 
 private:
-  bool rand_change ( node<Ntk> const& n, uint32_t leaf, uint32_t rand ) {
+  bool relevance ( node<Ntk> const& n, uint32_t leaf ) {
 
     // Get order of children (depends on rand)
-    const auto ocs = ordered_children( n, rand );
-
-    // Check that the 3rd input has children to consider
-    if ( !ntk.is_maj( ntk.get_node( ocs[2] ) ) )
-      return false;
+    const auto ocs = ordered_children( n, 0 );
 
     auto index = ntk.node_to_index(n);
-    for ( auto cut_index: cuts.cuts(index)[0] ) {
-      if (ntk.get_node(ocs[2]) == cut_index) return false;
-    } 
-
-    // Get children of 3rd input
-    auto ocs1 = ordered_children( ntk.get_node( ocs[1] ), 0 );
-    auto ocs2 = ordered_children( ntk.get_node( ocs[2] ), 0 );
-
     auto curr_tt = flip_carry_user_tt(n,n, cuts.cuts(index)[0]);
     auto new_tt = curr_tt;
-    // Propagate inverter?
-    if ( ntk.is_complemented( ocs[2] ) )
-    {
-      ocs2[0] = !ocs2[0];
-      ocs2[1] = !ocs2[1];
-      ocs2[2] = !ocs2[2];
-    }
 
     bool mappable = false;
 
@@ -244,108 +225,20 @@ private:
         //std::cout << "\t\tafter: "; kitty::print_hex(tt_child[2]); std::cout <<"\n";
         new_tt = ntk.compute(n, tt_child.begin(), tt_child.end());
       }
-    } else if ( auto cand = associativity_candidate( ocs[0], ocs[1], ocs2[0], ocs2[1], ocs2[2] ); cand ) {
-      const auto& [x, y, z, u, assoc] = *cand;
-      auto opt = ntk.create_maj( z, assoc ? u : x, ntk.create_maj( x, y, u ) );
-     
-      auto new_node = ntk.get_node(opt);
-      tmp_signals.push_back(opt);
-      remapped_nodes[n] = tmp_signals.size()-1; 
-      std::cout << "\tsubstitute " << n << " with " << new_node << "\n";
-
-      if ( count_path_to_node (n, n, leaf, 0) == 1) {
-        mappable = true;
-        new_tt = flip_carry_user_tt(new_node, new_node, cuts.cuts(index)[0]);
-      }
-    }
-
-    //if ( ntk.is_complemented( ocs[1] ) )
-    //{
-    //  ocs1[0] = !ocs1[0];
-    //  ocs1[1] = !ocs1[1];
-    //  ocs1[2] = !ocs1[2];
-    //}
-
-    /*  std::cout << "\tChange " << rand << ": ";
-      std::cout << ntk.get_node(ocs[0]) << "," << ntk.get_node(ocs[1]) << "," << ntk.get_node(ocs[2]) << "," << \
-                 ntk.get_node(ocs2[0]) << "," << ntk.get_node(ocs2[1]) << "," << ntk.get_node(ocs2[2]) << "\n";
-    if ( auto cand = distributivity_candidate(ocs1[0], ocs1[1], ocs1[2], ocs2[0], ocs2[1], ocs2[2]); cand ) {
-      const auto& [x, y, u, v] = *cand;
-      auto opt = ntk.create_maj( x, y, ntk.create_maj( u, v, ocs[0] ) );
-
-      auto new_node = ntk.get_node(opt);
-      tmp_signals.push_back(opt);
-      remapped_nodes[n] = tmp_signals.size()-1; 
-      std::cout << "\tdistribution" << n << " with " << new_node << "\n";
-
-      if ( count_path_to_node (n, n, leaf, 0) == 1) {
-        mappable = true;
-        new_tt = flip_carry_user_tt(new_node, new_node, cuts.cuts(index)[0]);
-      }
-    }*/
-
-    /*if (mappable) {
-      std::cout << "\tChange " << rand << ": ";
-      std::cout << ntk.get_node(ocs[0]) << "," << ntk.get_node(ocs[1]) << "," << ntk.get_node(ocs[2]) << "," << \
-                 ntk.get_node(ocs2[0]) << "," << ntk.get_node(ocs2[1]) << "," << ntk.get_node(ocs2[2]) << "\n";
-    }*/
+    } 
 
     if(curr_tt != new_tt) {
       std::cout << "\t\tbefore: "; kitty::print_hex(curr_tt); std::cout <<"\n";
       std::cout << "\t\tafter: "; kitty::print_hex(new_tt); std::cout <<"\n";
-      assert(0);
+      assert(0 && "After mapping, wrong truth table.\n");
     }
+
     tmp_signals.clear();
     for (uint32_t i=0; i<tmp_size; i++) {
       remapped_nodes[i] = -1;
     }
+
     return mappable;
-  }
-
-  // Replace any occurance of x under z with y'
-  bool apply_relevance (node<Ntk> main_n, signal<Ntk> z, signal<Ntk> y, uint32_t x) {
-    if ( !ntk.is_maj( ntk.get_node(z) ))
-      return false;
-
-    auto index = ntk.node_to_index(main_n);
-    for ( auto cut_index: cuts.cuts(index)[0] ) {
-      if (ntk.get_node(z) == cut_index) return false;
-    } 
-    
-    auto n = ntk.get_node(z); 
-
-    std::array<signal<Ntk>, 3> children;
-
-    ntk.foreach_fanin( n, [&children]( auto const& f, auto i ) {
-      children[i] = f;
-    } );
-
-    for (auto child: children) {
-      if (ntk.get_node(child) != x) {
-        if (apply_relevance (main_n, child, y, x)) return true;
-      } else {
-
-        //tmp_signals.push_back(!y);
-        //remapped_nodes[ntk.get_node(child)] = tmp_signals.size()-1; 
-        ntk.substitute_node( ntk.get_node(child), !y );
-        return true;
-      }
-    }
-    return false;
-  }
-
-  bool check_leaf_in_node ( node<Ntk> curr_node, node<Ntk> parent_node, uint32_t leaf ) {
-    auto curr_index = ntk.node_to_index(curr_node);
-    if (curr_index == leaf) return true;
-    if (ntk.is_pi(curr_node) || ntk.is_constant(curr_node)) return false;
-    for (auto leaf: cuts.cuts(parent_node)[0]) {
-      if (ntk.node_to_index(curr_node) == leaf) return false;
-    }
-    for (uint32_t i = 0; i < 3; i++) {
-      auto child = ntk.get_children(curr_node, i);
-      if (check_leaf_in_node(child, parent_node, leaf)) return true;
-    }  
-    return false;
   }
 
   using candidate3_t = std::tuple<signal<Ntk>, signal<Ntk>, signal<Ntk>>;
@@ -375,68 +268,75 @@ private:
     return std::nullopt;
   }
 
-  using candidate2_t = std::tuple<signal<Ntk>, signal<Ntk>, signal<Ntk>, signal<Ntk>>;
-  std::optional<candidate2_t> distributivity_candidate ( signal<Ntk> const& u, signal<Ntk> const& v, signal<Ntk> const& w, signal<Ntk> const& a, signal<Ntk> const& b, signal<Ntk> const& c) const
-  {
-    if ( a.index == u.index && b.index == v.index ) {
-      return candidate2_t{a, b, c, w};
-    }
-    if ( a.index == u.index && b.index == w.index ) {
-      return candidate2_t{a, b, c, v};
-    }
-    if ( a.index == v.index && b.index == w.index ) {
-      return candidate2_t{a, b, c, u};
-    }
-    if ( a.index == v.index && b.index == u.index ) {
-      return candidate2_t{a, b, c, w};
-    }
-    if ( a.index == w.index && b.index == u.index ) {
-      return candidate2_t{a, b, c, v};
-    }
-    if ( a.index == w.index && b.index == v.index ) {
-      return candidate2_t{a, b, c, u};
+  bool associativity ( node<Ntk> const& n, uint32_t leaf, uint32_t rand ) {
+
+    // Get order of children (depends on rand)
+    const auto ocs = ordered_children( n, rand );
+
+    // Check that the 3rd input has children to consider
+    if ( !ntk.is_maj( ntk.get_node( ocs[2] ) ) )
+      return false;
+
+    auto index = ntk.node_to_index(n);
+    for ( auto cut_index: cuts.cuts(index)[0] ) {
+      if (ntk.get_node(ocs[2]) == cut_index) return false;
+    } 
+
+    // Get children of 3rd input
+    auto ocs2 = ordered_children( ntk.get_node( ocs[2] ), 0 );
+
+    // Propagate inverter
+    if ( ntk.is_complemented( ocs[2] ) ) {
+      ocs2[0] = !ocs2[0];
+      ocs2[1] = !ocs2[1];
+      ocs2[2] = !ocs2[2];
     }
 
-    if ( a.index == u.index && c.index == v.index ) {
-      return candidate2_t{a, c, b, w};
-    }
-    if ( a.index == u.index && c.index == w.index ) {
-      return candidate2_t{a, c, b, v};
-    }
-    if ( a.index == v.index && c.index == w.index ) {
-      return candidate2_t{a, c, b, u};
-    }
-    if ( a.index == v.index && c.index == u.index ) {
-      return candidate2_t{a, c, b, w};
-    }
-    if ( a.index == w.index && c.index == u.index ) {
-      return candidate2_t{a, c, b, v};
-    }
-    if ( a.index == w.index && c.index == v.index ) {
-      return candidate2_t{a, c, b, u};
+    auto curr_tt = flip_carry_user_tt(n,n, cuts.cuts(index)[0]);
+    auto new_tt = curr_tt;
+    bool mappable = false;
+
+    if ( auto cand = associativity_candidate( ocs[0], ocs[1], ocs2[0], ocs2[1], ocs2[2] ); cand ) {
+      const auto& [x, y, z, u, assoc] = *cand;
+      auto opt = ntk.create_maj( z, assoc ? u : x, ntk.create_maj( x, y, u ) );
+     
+      auto new_node = ntk.get_node(opt);
+      tmp_signals.push_back(opt);
+      remapped_nodes[n] = tmp_signals.size()-1; 
+
+      if ( count_path_to_node (n, n, leaf, 0) == 1) {
+        std::cout << "\tassociativity " << n << " with " << new_node << "\n";
+        mappable = true;
+        new_tt = flip_carry_user_tt(n, n, cuts.cuts(index)[0]);
+      }
+    } 
+
+    if ( auto cand = associativity_candidate( ocs[0], ocs[1], ocs2[0], ocs2[2], ocs2[1] ); !mappable && cand ) {
+      const auto& [x, y, z, u, assoc] = *cand;
+      auto opt = ntk.create_maj( z, assoc ? u : x, ntk.create_maj( x, y, u ) );
+     
+      auto new_node = ntk.get_node(opt);
+      tmp_signals.push_back(opt);
+      remapped_nodes[n] = tmp_signals.size()-1; 
+
+      if ( count_path_to_node (n, n, leaf, 0) == 1) {
+        std::cout << "\tassociativity " << n << " with " << new_node << "\n";
+        mappable = true;
+        new_tt = flip_carry_user_tt(n, n, cuts.cuts(index)[0]);
+        //print_lut(n,n);
+      }
+    } 
+    if(curr_tt != new_tt) {
+      std::cout << "\t\tbefore: "; kitty::print_hex(curr_tt); std::cout <<"\n";
+      std::cout << "\t\tafter: "; kitty::print_hex(new_tt); std::cout <<"\n";
+      assert(0 && "After mapping, wrong truth table.\n");
     }
 
-    if ( b.index == u.index && c.index == v.index ) {
-      return candidate2_t{b, c, a, w};
+    tmp_signals.clear();
+    for (uint32_t i=0; i<tmp_size; i++) {
+      remapped_nodes[i] = -1;
     }
-    if ( b.index == u.index && c.index == w.index ) {
-      return candidate2_t{b, c, a, v};
-    }
-    if ( b.index == v.index && c.index == w.index ) {
-      return candidate2_t{b, c, a, u};
-    }
-    if ( b.index == v.index && c.index == u.index ) {
-      return candidate2_t{b, c, a, w};
-    }
-    if ( b.index == w.index && c.index == u.index ) {
-      return candidate2_t{b, c, a, v};
-    }
-    if ( b.index == w.index && c.index == v.index ) {
-      return candidate2_t{b, c, a, u};
-    }
-
-
-    return std::nullopt;
+    return mappable;
   }
 
   using candidate_t = std::tuple<signal<Ntk>, signal<Ntk>, signal<Ntk>, signal<Ntk>, bool>;
@@ -458,9 +358,139 @@ private:
     {
       return candidate_t{v, x, z, w, w.complement == y.complement};
     }
+    if ( w.index == z.index )
+    {
+      return candidate_t{v, x, z, w, w.complement == y.complement};
+    }
 
     return std::nullopt;
   }
+
+
+  bool distributivity( node<Ntk> const& n, uint32_t leaf, uint32_t rand ) {
+
+    // Get order of children (depends on rand)
+    const auto ocs = ordered_children( n, rand );
+
+    // Check that the 3rd input has children to consider
+    if ( !ntk.is_maj( ntk.get_node( ocs[2] ) ) || !ntk.is_maj( ntk.get_node( ocs[1] ) ) )
+      return false;
+
+    auto index = ntk.node_to_index(n);
+    for ( auto cut_index: cuts.cuts(index)[0] ) {
+      if (ntk.get_node(ocs[2]) == cut_index) return false;
+      if (ntk.get_node(ocs[1]) == cut_index) return false;
+    } 
+    // Get children of 3rd input
+    auto ocs1 = ordered_children( ntk.get_node( ocs[1] ), 0 );
+    auto ocs2 = ordered_children( ntk.get_node( ocs[2] ), 0 );
+
+    // Propagate inverter?
+    if ( ntk.is_complemented( ocs[2] ) ) {
+      ocs2[0] = !ocs2[0];
+      ocs2[1] = !ocs2[1];
+      ocs2[2] = !ocs2[2];
+    }
+    if ( ntk.is_complemented( ocs[1] ) ) {
+      ocs1[0] = !ocs1[0];
+      ocs1[1] = !ocs1[1];
+      ocs1[2] = !ocs1[2];
+    }
+
+    auto curr_tt = flip_carry_user_tt(n,n, cuts.cuts(index)[0]);
+    auto new_tt = curr_tt;
+    bool mappable = false;
+    
+    if ( auto cand = distributivity_candidate(ocs1[0], ocs1[1], ocs1[2], ocs2[0], ocs2[1], ocs2[2]); cand ) {
+      const auto& [x, y, u, v] = *cand;
+      auto opt = ntk.create_maj( x, y, ntk.create_maj( u, v, ocs[0] ) );
+
+      auto new_node = ntk.get_node(opt);
+      tmp_signals.push_back(opt);
+      remapped_nodes[n] = tmp_signals.size()-1; 
+
+      std::cout << "\tdistribution " << n << " with " << new_node << "\n";
+      if ( count_path_to_node (n, n, leaf, 0) == 1) {
+        mappable = true;
+        new_tt = flip_carry_user_tt(n, n, cuts.cuts(index)[0]);
+      }
+    } 
+
+    if(curr_tt != new_tt) {
+      std::cout << "\t\tbefore: "; kitty::print_hex(curr_tt); std::cout <<"\n";
+      std::cout << "\t\tafter: "; kitty::print_hex(new_tt); std::cout <<"\n";
+      assert(0 && "After mapping, wrong truth table.\n");
+    }
+    tmp_signals.clear();
+    for (uint32_t i=0; i<tmp_size; i++) {
+      remapped_nodes[i] = -1;
+    }
+    return mappable;
+  }
+
+  using candidate2_t = std::tuple<signal<Ntk>, signal<Ntk>, signal<Ntk>, signal<Ntk>>;
+  std::optional<candidate2_t> distributivity_candidate ( signal<Ntk> const& u, signal<Ntk> const& v, signal<Ntk> const& w, signal<Ntk> const& a, signal<Ntk> const& b, signal<Ntk> const& c) const
+  {
+    if ( a == u && b == v ) {
+      return candidate2_t{a, b, c, w};
+    }
+    if ( a == u && b == w ) {
+      return candidate2_t{a, b, c, v};
+    }
+    if ( a == v && b == w ) {
+      return candidate2_t{a, b, c, u};
+    }
+    if ( a == v && b == u ) {
+      return candidate2_t{a, b, c, w};
+    }
+    if ( a == w && b == u ) {
+      return candidate2_t{a, b, c, v};
+    }
+    if ( a == w && b == v ) {
+      return candidate2_t{a, b, c, u};
+    }
+
+    if ( a == u && c == v ) {
+      return candidate2_t{a, c, b, w};
+    }
+    if ( a == u && c == w ) {
+      return candidate2_t{a, c, b, v};
+    }
+    if ( a == v && c == w ) {
+      return candidate2_t{a, c, b, u};
+    }
+    if ( a == v && c == u ) {
+      return candidate2_t{a, c, b, w};
+    }
+    if ( a == w && c == u ) {
+      return candidate2_t{a, c, b, v};
+    }
+    if ( a == w && c == v ) {
+      return candidate2_t{a, c, b, u};
+    }
+
+    if ( b == u && c == v ) {
+      return candidate2_t{b, c, a, w};
+    }
+    if ( b == u && c == w ) {
+      return candidate2_t{b, c, a, v};
+    }
+    if ( b == v && c == w ) {
+      return candidate2_t{b, c, a, u};
+    }
+    if ( b == v && c == u ) {
+      return candidate2_t{b, c, a, w};
+    }
+    if ( b == w && c == u ) {
+      return candidate2_t{b, c, a, v};
+    }
+    if ( b == w && c == v ) {
+      return candidate2_t{b, c, a, u};
+    }
+
+    return std::nullopt;
+  }
+
 
   std::array<signal<Ntk>, 3> ordered_children( node<Ntk> const& n, uint32_t rand ) const
   {
@@ -501,10 +531,13 @@ private:
   }
 
   void try_other_graph ( uint32_t index, uint32_t leaf ) {
-
-    for (uint32_t i = 0; i < 1; i++) {
-      uint32_t curr_node = index;
-      if (rand_change(ntk.index_to_node(index), leaf, i)) {
+    uint32_t n = ntk.index_to_node(index);
+    if (relevance(n, leaf)) {
+      std::cout << "\t\t->Success\n";
+      return;
+    }
+    for (uint32_t i = 0; i < 6; i++) {
+      if (associativity(n, leaf, i) || distributivity (n, leaf, i)) {
         std::cout << "\t\t->Success\n";
         return;
       }
@@ -1169,7 +1202,16 @@ private:
       if (curr_index == leaf) return;
     }
 
+
+    if(remapped_nodes[curr_index] > -1 && curr_index < tmp_size) {
+      //std::cout << "from " << n << "(" << remapped_nodes[source_index] << ")";
+      auto n = ntk.index_to_node(ntk.get_node(tmp_signals[remapped_nodes[curr_index]]));
+      curr_index = ntk.node_to_index(n);
+      //std::cout << " to " << n;
+      //std::cout << "\n";
+    }
     std::cout << curr_index << "->";
+    
     for (uint32_t i = 0; i < ntk.fanin_size(curr_index); i++) {
       auto leaf = ntk.get_children(curr_index, i); 
       bool flipped = false;
@@ -1185,7 +1227,6 @@ private:
  
     for (uint32_t i = 0; i < ntk.fanin_size(curr_index); i++) {
       auto leaf = ntk.get_children(curr_index, i); 
-      //if (ntk.is_constant(leaf)) continue;
       print_lut (index, leaf);
     }
     return;
