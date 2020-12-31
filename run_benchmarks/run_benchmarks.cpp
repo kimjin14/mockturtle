@@ -9,8 +9,8 @@
 #include <mockturtle/io/verilog_reader.hpp>
 #include <mockturtle/io/write_blif.hpp>
 #include <mockturtle/io/write_verilog.hpp>
-//#include <mockturtle/algorithms/carry_lut_mapping.hpp>
-#include <mockturtle/algorithms/post_carry_lut_mapping.hpp>
+#include <mockturtle/algorithms/carry_lut_mapping.hpp>
+//#include <mockturtle/algorithms/post_carry_lut_mapping.hpp>
 #include <mockturtle/algorithms/collapse_mapped.hpp>
 #include <mockturtle/networks/mig.hpp>
 #include <mockturtle/views/depth_view.hpp>
