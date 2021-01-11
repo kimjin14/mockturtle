@@ -175,6 +175,24 @@ public:
     }
   }
 
+  void resize_mapping (uint32_t add) {
+
+    if constexpr ( StoreFunction )
+    {
+      /* insert 0 truth table */
+      _mapping_storage->cache.insert( kitty::dynamic_truth_table( 0 ) );
+
+      /* default each truth table to 0 */
+      _mapping_storage->functions.resize( this->size() + add, 0 );
+    }
+    _mapping_storage->mappings.resize( this->size() + add, 0);
+    _mapping_storage->carry_mappings.resize( this->size() + add, 0);
+    _mapping_storage->carry_luta_mappings.resize( this->size() + add, 0 );
+    _mapping_storage->carry_lutb_mappings.resize( this->size() + add, 0 );
+    _mapping_storage->carry_lut_mapped.resize( this->size() + add, false );
+    _mapping_storage->carry_lut_mapping_complemented.resize( this->size() + add, false );
+  }
+  
   bool has_mapping() const
   {
     return _mapping_storage->mapping_size > 0;
