@@ -62,9 +62,9 @@ bool operator<( cut_type<ComputeTruth, cut_enumeration_mf_cut> const& c1, cut_ty
 {
   constexpr auto eps{0.005f};
 
-  const char* env_p = std::getenv("DELAY");
-  if (env_p == NULL) assert("Set delay env" && 0);
-  if (std::strcmp(env_p,"delay")==0) {
+  //const char* env_p = std::getenv("DELAY");
+  //if (env_p == NULL) assert("Set delay env" && 0);
+  //if (std::strcmp(env_p,"delay")==0) {
     if ( c1->data.delay < c2->data.delay )
       return true;
     if ( c1->data.delay > c2->data.delay )
@@ -73,16 +73,16 @@ bool operator<( cut_type<ComputeTruth, cut_enumeration_mf_cut> const& c1, cut_ty
       return true;
     if ( c1->data.flow > c2->data.flow + eps )
       return false;
-  } else {
-    if ( c1->data.flow < c2->data.flow - eps )
-      return true;
-    if ( c1->data.flow > c2->data.flow + eps )
-      return false;
-    if ( c1->data.delay < c2->data.delay )
-      return true;
-    if ( c1->data.delay > c2->data.delay )
-      return false;
-  } 
+  //} else {
+  //  if ( c1->data.flow < c2->data.flow - eps )
+  //    return true;
+  //  if ( c1->data.flow > c2->data.flow + eps )
+  //    return false;
+  //  if ( c1->data.delay < c2->data.delay )
+  //    return true;
+  //  if ( c1->data.delay > c2->data.delay )
+  //    return false;
+  //} 
   //if ( c1_cost == 0 && c2_cost > 0)
   //  return true; 
   //if ( c2_cost == 0 && c1_cost > 0)

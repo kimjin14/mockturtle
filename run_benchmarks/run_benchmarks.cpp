@@ -46,10 +46,6 @@ int main (int argc, char *argv[]){
     std::cout << "Parsing Error.\n"; 
   }
 
-  //mig_npn_resynthesis resyn( false ); 
-  //cut_rewriting( mig, resyn ); 
-  //cleanup_dangling( mig );
-
   depth_view depth_mig { mig }; 
 
   //////////////////////////////////////////////////////
@@ -76,17 +72,10 @@ int main (int argc, char *argv[]){
   } else {
     mapping_params.carry_mapping = true;
     outputName = getFileName(argv[1]) + "_carry";
-    //if (argc > 5)
-    //  mapping_params.length= std::stoi(argv[5]); 
-    //if (argc > 6)
-    //  mapping_params.num_crit_path = std::stoi(argv[6]);
-    //if (argc > 7 && argv[7] == std::string("direct"))
-    //  mapping_params.direct = true;
-    //else 
-    //  mapping_params.direct = false;
   }
 
   mapping_view <mig_network, true> carry_mapped_mig { mig };
+
   carry_lut_mapping <mapping_view<mig_network,true>,true> (carry_mapped_mig, mapping_params);  
   auto klut_carry_opt = collapse_mapped_network<klut_network>( carry_mapped_mig );
   if (klut_carry_opt == std::nullopt) {
@@ -105,11 +94,6 @@ int main (int argc, char *argv[]){
     }
   });
 
-  //mig_npn_resynthesis resyn;
-  //const auto new_mig = node_resynthesis<mig_network>( klut_carry, resyn );
-  //write_verilog(mig, "mig1.txt");//, false/*carry mapping*/, mapping_params.xilinx_arch );
-  //write_verilog(mig_resyn, "mig2.txt");//, false/*carry mapping*/, mapping_params.xilinx_arch );
- 
   // Write blif output. Last line will be a comment on what run it was 
   write_blif(klut_carry, "blif/" + outputName+".blif", true/*carry mapping*/, mapping_params.xilinx_arch );
   std::ofstream blifOut ("blif/" + outputName+".blif", std::ofstream::out | std::ofstream::app );
@@ -119,22 +103,14 @@ int main (int argc, char *argv[]){
           << " xilinx=" << mapping_params.xilinx_arch << "\n\n";
   blifOut.close();
 
-  std::cout << "Results for " << outputName  << ",";
-  std::cout << mig.num_gates() << "," << depth_mig.depth();
-  //std::cout << ",=" << klut_carry.num_gates() << "+" << klut_carry.num_carry() << "/2," << float(depth_klut_carry.depth()/LUT_DELAY);
-  std::cout << "," << klut_carry.num_gates() + klut_carry.num_carry() - klut_carry.num_carry_LUT(); 
-  std::cout << "," << klut_carry.num_gates();
-  std::cout << "," << klut_carry.num_carry();
-  std::cout << "," << klut_carry.num_carry_LUT() << "," << float(depth_klut_carry.depth()/LUT_DELAY);
+  std::cout << "Results for " << outputName;
+  //std::cout << "," << mig.num_gates() << "," << depth_mig.depth();
+  std::cout << ", Area = " << klut_carry.num_gates() + klut_carry.num_carry() - klut_carry.num_carry_LUT(); 
+  //std::cout << "," << klut_carry.num_gates();
+  //std::cout << "," << klut_carry.num_carry();
+  //std::cout << "," << klut_carry.num_carry_LUT();
+  std::cout << ", Level = " << float(depth_klut_carry.depth()/LUT_DELAY);
   std::cout << "\n";
-
-  std::cout << "# " << outputName
-          << " baseline=" << !mapping_params.carry_mapping
-          << " delay=" << mapping_params.delay 
-          << " xilinx=" << mapping_params.xilinx_arch << "\n\n";
-  //depth_mig.print_levels();
-  //depth_klut_carry.print_levels();
-  //depth_klut_carry.print_num_paths_at_max_level();
 
   // Write blif for CEC. Doesn't have to happen every run.
   write_blif(klut_carry, "blifcec/" + outputName +".cec.blif", false/*carry mapping*/, mapping_params.xilinx_arch );
